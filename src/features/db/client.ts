@@ -3,12 +3,26 @@
  * @description Database access boundary consumed by SMS and REPL features.
  * @module db
  */
+import { and, desc, eq } from "drizzle-orm";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+
 import type { ExecutionResult, ReplLanguage } from "../repl/repl.types";
-import type { ExecutionJob, SmsIdentity, SmsMessage } from "./db.types";
+import { createId } from "../../shared/ids";
+import type { AppConfig } from "../../shared/env";
+import type { ExecutionJob, ReplSession, SmsIdentity, SmsMessage } from "./db.types";
+import * as schema from "./schema";
+
+/**
+ * Concrete Drizzle client type for this schema.
+ * @remarks Keeping the ORM type private to this module preserves the stable
+ * `Db` API that parallel SMS and sandbox workstreams depend on.
+ */
+type DatabaseClient = PostgresJsDatabase<typeof schema>;
 
 /**
  * Input required to persist an SMS message.
- * @remarks The database implementation will map camelCase fields to the final
+ * @remarks The database implementation maps camelCase fields to the final
  * schema while callers stay independent of ORM naming conventions.
  */
 export interface InsertSmsMessage {
@@ -58,28 +72,6 @@ export interface CreateExecutionJobInput {
   timeoutMs: number;
   /** Output budget captured at enqueue time. */
   maxOutputChars: number;
-}
-
-/**
- * Active REPL session row used for future persistent-session work.
- * @remarks Phase 0 names the table and shape even though the MVP execution
- * model remains single-shot.
- */
-export interface ReplSession {
-  /** Primary key. */
-  id: string;
-  /** Owning SMS identity. */
-  smsIdentityId: string;
-  /** Session language. */
-  language: ReplLanguage;
-  /** Session lifecycle status. */
-  status: string;
-  /** Provider-neutral state payload reserved for later REPL persistence. */
-  state: unknown;
-  /** Last activity timestamp. */
-  lastActiveAt: Date;
-  /** Creation timestamp. */
-  createdAt: Date;
 }
 
 /**
@@ -167,4 +159,306 @@ export interface Db {
    * @returns Promise that resolves once active state has been reset.
    */
   resetActiveSession(identityId: string): Promise<void>;
+}
+
+/**
+ * Options for creating a Postgres-backed DB access layer.
+ * @remarks Callers pass a connection string from Hyperdrive or Neon rather than
+ * letting database code reach into Worker globals.
+ */
+export interface CreatePostgresDbOptions {
+  /** Postgres connection string from Hyperdrive or direct Neon configuration. */
+  connectionString: string;
+  /** Maximum connections opened by this Worker isolate. */
+  maxConnections?: number;
+}
+
+/**
+ * Creates a DB access layer from normalized application config.
+ * @param config - Parsed Worker configuration for the current request context.
+ * @returns Stable database API for feature modules.
+ * @remarks This helper keeps route code aligned with `getAppConfig` while the
+ * lower-level factory remains useful for integration tests.
+ */
+export function createDbFromConfig(config: Pick<AppConfig, "databaseUrl">): Db {
+  return createPostgresDb({ connectionString: config.databaseUrl });
+}
+
+/**
+ * Creates a Postgres-backed database access layer.
+ * @param options - Connection details supplied by the Worker runtime or tests.
+ * @returns Stable database API for SMS, REPL, and admin features.
+ * @remarks Prepared statements are disabled because Hyperdrive and pooled Neon
+ * connections should not rely on per-connection prepared statement state.
+ */
+export function createPostgresDb(options: CreatePostgresDbOptions): Db {
+  const queryClient = postgres(options.connectionString, {
+    max: options.maxConnections ?? 5,
+    prepare: false,
+  });
+  const db = drizzle(queryClient, { schema });
+
+  return createDrizzleDb(db);
+}
+
+/**
+ * Wraps a Drizzle client in the feature-level DB contract.
+ * @param db - Drizzle database bound to the app schema.
+ * @returns Stable database API.
+ * @remarks Exporting this seam gives tests a way to use transactions or test
+ * databases without making production code expose table objects.
+ */
+export function createDrizzleDb(db: DatabaseClient): Db {
+  return {
+    async findOrCreateSmsIdentity(phoneE164) {
+      const inserted = await db
+        .insert(schema.smsIdentities)
+        .values({
+          id: createId("smsid"),
+          phoneE164,
+        })
+        .onConflictDoNothing({ target: schema.smsIdentities.phoneE164 })
+        .returning();
+
+      if (inserted[0]) {
+        return toSmsIdentity(inserted[0]);
+      }
+
+      const existing = await db
+        .select()
+        .from(schema.smsIdentities)
+        .where(eq(schema.smsIdentities.phoneE164, phoneE164))
+        .limit(1);
+
+      if (!existing[0]) {
+        throw new Error("Failed to find or create SMS identity");
+      }
+
+      return toSmsIdentity(existing[0]);
+    },
+
+    async insertInboundSms(input) {
+      const inserted = await db
+        .insert(schema.smsMessages)
+        .values({
+          id: createId("sms"),
+          direction: input.direction,
+          providerMessageSid: input.providerMessageSid,
+          phoneE164: input.phoneE164,
+          body: input.body,
+          status: input.status,
+          rawPayload: input.rawPayload,
+        })
+        .onConflictDoNothing({
+          target: schema.smsMessages.providerMessageSid,
+        })
+        .returning();
+
+      if (inserted[0]) {
+        return toSmsMessage(inserted[0]);
+      }
+
+      if (!input.providerMessageSid) {
+        throw new Error("Failed to insert SMS message");
+      }
+
+      const existing = await db
+        .select()
+        .from(schema.smsMessages)
+        .where(eq(schema.smsMessages.providerMessageSid, input.providerMessageSid))
+        .limit(1);
+
+      if (!existing[0]) {
+        throw new Error("Failed to resolve duplicate SMS message");
+      }
+
+      return toSmsMessage(existing[0]);
+    },
+
+    async createExecutionJob(input) {
+      const inserted = await db
+        .insert(schema.executionJobs)
+        .values({
+          id: createId("job"),
+          smsMessageId: input.smsMessageId,
+          smsIdentityId: input.smsIdentityId,
+          language: input.language,
+          code: input.code,
+          status: "queued",
+          timeoutMs: input.timeoutMs,
+          maxOutputChars: input.maxOutputChars,
+        })
+        .returning();
+
+      if (!inserted[0]) {
+        throw new Error("Failed to create execution job");
+      }
+
+      return toExecutionJob(inserted[0]);
+    },
+
+    async markExecutionRunning(id, sandboxId) {
+      const updated = await db
+        .update(schema.executionJobs)
+        .set({
+          status: "running",
+          sandboxId: sandboxId ?? null,
+          startedAt: new Date(),
+        })
+        .where(and(eq(schema.executionJobs.id, id), eq(schema.executionJobs.status, "queued")))
+        .returning({ id: schema.executionJobs.id });
+
+      if (!updated[0]) {
+        throw new Error(`Execution job ${id} is not queued or does not exist`);
+      }
+    },
+
+    async finishExecutionJob(id, result) {
+      await db.transaction(async (tx) => {
+        const finishedAt = new Date();
+        const updated = await tx
+          .update(schema.executionJobs)
+          .set({
+            status: result.status,
+            sandboxId: result.sandboxId,
+            exitCode: result.exitCode,
+            durationMs: result.durationMs,
+            errorCode: result.errorCode,
+            finishedAt,
+          })
+          .where(eq(schema.executionJobs.id, id))
+          .returning({
+            id: schema.executionJobs.id,
+            maxOutputChars: schema.executionJobs.maxOutputChars,
+          });
+
+        if (!updated[0]) {
+          throw new Error(`Execution job ${id} does not exist`);
+        }
+
+        const combinedOutput = joinOutput(result.stdout, result.stderr);
+        const combinedPreview = combinedOutput.slice(0, updated[0].maxOutputChars);
+
+        await tx.insert(schema.executionOutputs).values({
+          id: createId("out"),
+          executionJobId: id,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          combinedPreview,
+          wasTruncated: combinedOutput.length > combinedPreview.length,
+        });
+      });
+    },
+
+    async getActiveSession(identityId) {
+      const sessions = await db
+        .select()
+        .from(schema.replSessions)
+        .where(
+          and(eq(schema.replSessions.smsIdentityId, identityId), eq(schema.replSessions.status, "active")),
+        )
+        .orderBy(desc(schema.replSessions.lastActiveAt))
+        .limit(1);
+
+      return sessions[0] ? toReplSession(sessions[0]) : null;
+    },
+
+    async upsertSessionLanguage(identityId, language) {
+      await db
+        .insert(schema.replSessions)
+        .values({
+          id: createId("sess"),
+          smsIdentityId: identityId,
+          language,
+          status: "active",
+          state: {},
+          lastActiveAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: schema.replSessions.smsIdentityId,
+          targetWhere: eq(schema.replSessions.status, "active"),
+          set: {
+            language,
+            lastActiveAt: new Date(),
+          },
+        });
+    },
+  };
+}
+
+/**
+ * Converts separated streams into the preview shape used by SMS and admin UI.
+ * @param stdout - Captured standard output.
+ * @param stderr - Captured standard error.
+ * @returns Combined stream preview text.
+ * @remarks A small label on stderr preserves enough context for SMS previews
+ * without requiring the egress feature to understand separate streams.
+ */
+function joinOutput(stdout: string, stderr: string): string {
+  if (!stderr) {
+    return stdout;
+  }
+
+  if (!stdout) {
+    return stderr;
+  }
+
+  return `${stdout}\n${stderr}`;
+}
+
+/**
+ * Maps an ORM identity row to the stable feature contract.
+ * @param row - Drizzle-selected SMS identity row.
+ * @returns Domain-level SMS identity.
+ * @remarks Database check constraints enforce the runtime language union; this
+ * cast keeps that invariant at the feature boundary.
+ */
+function toSmsIdentity(row: typeof schema.smsIdentities.$inferSelect): SmsIdentity {
+  return {
+    ...row,
+    defaultLanguage: row.defaultLanguage as ReplLanguage,
+  };
+}
+
+/**
+ * Maps an ORM message row to the stable feature contract.
+ * @param row - Drizzle-selected SMS message row.
+ * @returns Domain-level SMS message.
+ * @remarks Provider and direction are narrowed here so callers do not repeat
+ * database constraint knowledge in every feature.
+ */
+function toSmsMessage(row: typeof schema.smsMessages.$inferSelect): SmsMessage {
+  return {
+    ...row,
+    direction: row.direction as SmsMessage["direction"],
+    provider: row.provider as SmsMessage["provider"],
+  };
+}
+
+/**
+ * Maps an ORM execution job row to the stable feature contract.
+ * @param row - Drizzle-selected execution job row.
+ * @returns Domain-level execution job.
+ * @remarks Lifecycle and language unions are guaranteed by table checks and are
+ * narrowed once at the DB boundary.
+ */
+function toExecutionJob(row: typeof schema.executionJobs.$inferSelect): ExecutionJob {
+  return {
+    ...row,
+    language: row.language as ExecutionJob["language"],
+    status: row.status as ExecutionJob["status"],
+  };
+}
+
+/**
+ * Maps an ORM session row to the stable feature contract.
+ * @param row - Drizzle-selected REPL session row.
+ * @returns Domain-level active session.
+ * @remarks The language cast is centralized with other schema-backed unions.
+ */
+function toReplSession(row: typeof schema.replSessions.$inferSelect): ReplSession {
+  return {
+    ...row,
+    language: row.language as ReplLanguage,
+  };
 }
