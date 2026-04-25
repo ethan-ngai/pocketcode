@@ -41,7 +41,8 @@ export function formatSmsOutput(output: string, prefix = ""): string[] {
   if (remaining && chunks.length > 0) {
     const notice = "\n...[truncated]";
     const lastIndex = chunks.length - 1;
-    chunks[lastIndex] = `${chunks[lastIndex].slice(0, SMS_OUTPUT_CHUNK_CHARS - notice.length)}${notice}`;
+    chunks[lastIndex] =
+      `${chunks[lastIndex].slice(0, SMS_OUTPUT_CHUNK_CHARS - notice.length)}${notice}`;
   }
 
   return chunks.length > 0 ? chunks : [`${prefix}(no output)`];

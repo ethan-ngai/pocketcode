@@ -31,6 +31,12 @@ export interface Env {
   BETTER_AUTH_SECRET: string;
   /** Public Better Auth base URL for callback and cookie configuration. */
   BETTER_AUTH_URL: string;
+  /** Comma-separated web emails allowed to access admin-only surfaces. */
+  ADMIN_EMAILS?: string;
+  /** GitHub OAuth client id for project-team login when configured. */
+  GITHUB_CLIENT_ID?: string;
+  /** GitHub OAuth client secret, kept server-side for OAuth callbacks. */
+  GITHUB_CLIENT_SECRET?: string;
   /** Twilio account identifier used by REST API and webhook validation. */
   TWILIO_ACCOUNT_SID: string;
   /** Twilio auth token, kept server-side for REST API and signatures. */
@@ -65,6 +71,12 @@ export interface AppConfig {
   betterAuthSecret: string;
   /** Better Auth public base URL. */
   betterAuthUrl: string;
+  /** Lowercased admin email allowlist used until role rows exist. */
+  adminEmails: ReadonlySet<string>;
+  /** GitHub OAuth client id when project-team login is enabled. */
+  githubClientId: string | null;
+  /** GitHub OAuth client secret when project-team login is enabled. */
+  githubClientSecret: string | null;
   /** Twilio account SID. */
   twilioAccountSid: string;
   /** Twilio auth token. */
@@ -83,6 +95,30 @@ export interface AppConfig {
   executionMaxOutputChars: number;
 }
 
+/**
+ * Runtime configuration needed only by Better Auth and admin identity checks.
+ * @remarks Auth routes should not fail just because Twilio or sandbox bindings
+ * are absent in a local web/admin development session.
+ */
+export interface AuthConfig {
+  /** Direct database URL or Hyperdrive connection string. */
+  databaseUrl: string;
+  /** Whether the database URL came from Hyperdrive. */
+  usesHyperdrive: boolean;
+  /** Better Auth signing secret. */
+  betterAuthSecret: string;
+  /** Better Auth public base URL. */
+  betterAuthUrl: string;
+  /** Lowercased admin email allowlist used until role rows exist. */
+  adminEmails: ReadonlySet<string>;
+  /** GitHub OAuth client id when project-team login is enabled. */
+  githubClientId: string | null;
+  /** GitHub OAuth client secret when project-team login is enabled. */
+  githubClientSecret: string | null;
+  /** Public application base URL. */
+  appBaseUrl: string;
+}
+
 const DEFAULT_EXECUTION_TIMEOUT_MS = 5_000;
 const DEFAULT_EXECUTION_MAX_OUTPUT_CHARS = 4_000;
 
@@ -94,23 +130,16 @@ const DEFAULT_EXECUTION_MAX_OUTPUT_CHARS = 4_000;
  * will be implemented in parallel and should not each invent fallback behavior.
  */
 export function getAppConfig(env: Env): AppConfig {
-  const databaseUrl = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+  const authConfig = getAuthConfig(env);
   const twilioMessagingServiceSid = emptyToNull(env.TWILIO_MESSAGING_SERVICE_SID);
   const twilioFromNumber = emptyToNull(env.TWILIO_FROM_NUMBER);
-
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL or HYPERDRIVE binding is required");
-  }
 
   if (!twilioMessagingServiceSid && !twilioFromNumber) {
     throw new Error("TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER is required");
   }
 
   return {
-    databaseUrl,
-    usesHyperdrive: Boolean(env.HYPERDRIVE?.connectionString),
-    betterAuthSecret: requireBinding(env.BETTER_AUTH_SECRET, "BETTER_AUTH_SECRET"),
-    betterAuthUrl: requireBinding(env.BETTER_AUTH_URL, "BETTER_AUTH_URL"),
+    ...authConfig,
     twilioAccountSid: requireBinding(env.TWILIO_ACCOUNT_SID, "TWILIO_ACCOUNT_SID"),
     twilioAuthToken: requireBinding(env.TWILIO_AUTH_TOKEN, "TWILIO_AUTH_TOKEN"),
     twilioMessagingServiceSid,
@@ -127,6 +156,32 @@ export function getAppConfig(env: Env): AppConfig {
       DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
       "EXECUTION_MAX_OUTPUT_CHARS",
     ),
+  };
+}
+
+/**
+ * Builds validated auth config from Cloudflare bindings.
+ * @param env - Worker bindings supplied to the current request or test harness.
+ * @returns Parsed config needed by Better Auth and admin identity helpers.
+ * @remarks This narrower parser lets auth endpoints run in environments where
+ * SMS provider secrets are intentionally unavailable.
+ */
+export function getAuthConfig(env: Env): AuthConfig {
+  const databaseUrl = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL or HYPERDRIVE binding is required");
+  }
+
+  return {
+    databaseUrl,
+    usesHyperdrive: Boolean(env.HYPERDRIVE?.connectionString),
+    betterAuthSecret: requireBinding(env.BETTER_AUTH_SECRET, "BETTER_AUTH_SECRET"),
+    betterAuthUrl: requireBinding(env.BETTER_AUTH_URL, "BETTER_AUTH_URL"),
+    adminEmails: parseEmailSet(env.ADMIN_EMAILS),
+    githubClientId: emptyToNull(env.GITHUB_CLIENT_ID),
+    githubClientSecret: emptyToNull(env.GITHUB_CLIENT_SECRET),
+    appBaseUrl: requireBinding(env.APP_BASE_URL, "APP_BASE_URL"),
   };
 }
 
@@ -197,4 +252,20 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
 function emptyToNull(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+/**
+ * Parses the temporary admin allowlist.
+ * @param value - Comma-separated email list from Worker secrets or dev vars.
+ * @returns Normalized email set for constant-time membership checks.
+ * @remarks Lowercasing at the config boundary keeps authorization helpers from
+ * disagreeing on case handling before DB-backed roles replace the allowlist.
+ */
+function parseEmailSet(value: string | undefined): ReadonlySet<string> {
+  return new Set(
+    (value ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
 }

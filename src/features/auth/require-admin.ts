@@ -4,17 +4,26 @@
  * @module auth
  */
 import { AppError } from "../../shared/errors";
-import type { CurrentUser } from "./auth.types";
+import type { Env } from "../../shared/env";
+import type { AuthUser } from "./auth.types";
+import { getOptionalUser } from "./current-user";
 
 /**
- * Ensures a user is allowed to access admin-only functionality.
- * @param user - Current user resolved from Better Auth.
- * @returns The same user when admin access is allowed.
- * @remarks Centralizing the check keeps internal execution endpoints and admin
- * pages aligned once roles are backed by persistent auth data.
+ * Ensures the current request belongs to an allowed admin user.
+ * @param request - Incoming request carrying Better Auth session cookies.
+ * @param env - Worker bindings for auth and admin allowlist configuration.
+ * @returns Authenticated admin user.
+ * @remarks Centralizing this check keeps dashboards and internal execution APIs
+ * aligned while the MVP uses `ADMIN_EMAILS` instead of persistent role rows.
  */
-export function requireAdmin(user: CurrentUser | null): CurrentUser {
-  if (!user?.isAdmin) {
+export async function requireAdmin(request: Request, env: Env): Promise<AuthUser> {
+  const user = await getOptionalUser(request, env);
+
+  if (!user) {
+    throw new AppError("auth_required", "Authentication is required.", 401);
+  }
+
+  if (!user.isAdmin) {
     throw new AppError("admin_required", "Admin access is required.", 403);
   }
 

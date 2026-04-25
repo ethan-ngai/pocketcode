@@ -5,6 +5,8 @@
  */
 import { createId } from "../../shared/ids";
 import type { Env } from "../../shared/env";
+import { AppError } from "../../shared/errors";
+import { requireAdmin } from "../auth/require-admin";
 import { SMS_MAX_SOURCE_CHARS } from "../sms/sms.types";
 import {
   DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
@@ -35,10 +37,21 @@ interface ManualExecutionBody {
  * @param request - JSON request containing `language` and `code`.
  * @param env - Worker bindings containing the Sandbox Durable Object namespace.
  * @returns JSON execution result from the sandbox boundary.
- * @remarks This endpoint is intentionally thin and does not persist jobs, making
- * it useful for validating Sandbox deployment independently from SMS ingress.
+ * @remarks This endpoint uses the admin gate but intentionally avoids job
+ * persistence, making it useful for validating Sandbox deployment independently
+ * from SMS ingress.
  */
 export async function handleManualExecution(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+  } catch (error) {
+    if (error instanceof AppError) {
+      return Response.json({ error: error.code, message: error.message }, { status: error.status });
+    }
+
+    throw error;
+  }
+
   const body = (await request.json().catch(() => null)) as ManualExecutionBody | null;
 
   if (!body) {

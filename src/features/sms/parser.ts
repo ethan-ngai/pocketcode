@@ -20,7 +20,10 @@ const LANGUAGE_ALIASES: Record<string, ReplLanguage> = {
  * @remarks The MVP is single-shot execution, so bare messages execute in the
  * sender's default language while explicit prefixes override that preference.
  */
-export function parseSmsCommand(body: string, defaultLanguage: ReplLanguage | null = "python"): SmsCommand {
+export function parseSmsCommand(
+  body: string,
+  defaultLanguage: ReplLanguage | null = "python",
+): SmsCommand {
   const trimmed = body.trim();
 
   if (!trimmed) {
@@ -54,7 +57,10 @@ export function parseSmsCommand(body: string, defaultLanguage: ReplLanguage | nu
   }
 
   if (code.length > SMS_MAX_SOURCE_CHARS) {
-    return { kind: "unknown", reason: `Code is too long. Limit: ${SMS_MAX_SOURCE_CHARS} characters.` };
+    return {
+      kind: "unknown",
+      reason: `Code is too long. Limit: ${SMS_MAX_SOURCE_CHARS} characters.`,
+    };
   }
 
   return {

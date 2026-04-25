@@ -30,11 +30,83 @@ const timestampTz = { withTimezone: true, mode: "date" } as const;
  */
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
-  email: text("email").unique(),
-  name: text("name"),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  image: text("image"),
   createdAt: timestamp("created_at", timestampTz).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", timestampTz).notNull().defaultNow(),
 });
+
+/**
+ * Better Auth browser session records.
+ * @remarks SMS identities do not depend on these rows; sessions represent only
+ * web/admin authentication and can expire independently of phone usage.
+ */
+export const session = pgTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at", timestampTz).notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", timestampTz).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", timestampTz).notNull().defaultNow(),
+  },
+  (table) => [index("session_user_id_idx").on(table.userId)],
+);
+
+/**
+ * Better Auth credential and OAuth account links.
+ * @remarks Provider accounts are separate from SMS identities so phone-only
+ * usage stays available without public web signup.
+ */
+export const account = pgTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", timestampTz),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", timestampTz),
+    scope: text("scope"),
+    idToken: text("id_token"),
+    password: text("password"),
+    createdAt: timestamp("created_at", timestampTz).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", timestampTz).notNull().defaultNow(),
+  },
+  (table) => [
+    index("account_user_id_idx").on(table.userId),
+    uniqueIndex("account_provider_account_idx").on(table.providerId, table.accountId),
+  ],
+);
+
+/**
+ * Better Auth one-time verification values.
+ * @remarks Keeping verification values in Postgres avoids adding a second auth
+ * store before magic links or SMS account linking need specialized storage.
+ */
+export const verification = pgTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: timestamp("expires_at", timestampTz).notNull(),
+    createdAt: timestamp("created_at", timestampTz).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", timestampTz).notNull().defaultNow(),
+  },
+  (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
 
 /**
  * Phone-number identity used before and after Better Auth account linkage.
@@ -182,6 +254,9 @@ export const auditEvents = pgTable("audit_events", {
  */
 export const TABLE_NAMES = [
   "users",
+  "session",
+  "account",
+  "verification",
   "sms_identities",
   "sms_messages",
   "execution_jobs",

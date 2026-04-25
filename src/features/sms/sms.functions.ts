@@ -195,7 +195,11 @@ async function dispatchInboundCommand(input: {
         ),
       });
 
-      await input.db.recordSessionExecution(input.identity.id, input.currentDefaultLanguage, job.id);
+      await input.db.recordSessionExecution(
+        input.identity.id,
+        input.currentDefaultLanguage,
+        job.id,
+      );
       input.waitUntil(sendExecutionResultSms({ ...input, job }));
       return twimlResponse("Running code...");
     }
@@ -419,7 +423,10 @@ async function getQuotaRefusalMessage(db: Db, phoneE164: string): Promise<string
     return "Hourly limit reached. Try again later.";
   }
 
-  const dailyCount = await db.countExecutionsForPhone(phoneE164, new Date(now - 24 * 60 * 60 * 1_000));
+  const dailyCount = await db.countExecutionsForPhone(
+    phoneE164,
+    new Date(now - 24 * 60 * 60 * 1_000),
+  );
 
   if (dailyCount >= DEFAULT_SMS_EXECUTIONS_PER_DAY) {
     return "Daily limit reached. Try again tomorrow.";

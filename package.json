@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@cloudflare/sandbox": "^0.9.0",
+    "@better-auth/drizzle-adapter": "^1.6.9",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
+    "better-auth": "^1.6.9",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
     "react": "latest",

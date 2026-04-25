@@ -33,14 +33,18 @@ export const getAdminDashboardData = createServerFn({ method: "GET" }).handler(
     const db = createAdminDb();
 
     return {
-      recentMessages: (await db.listRecentSmsMessages(DASHBOARD_PREVIEW_LIMIT)).map(toAdminMessageView),
+      recentMessages: (await db.listRecentSmsMessages(DASHBOARD_PREVIEW_LIMIT)).map(
+        toAdminMessageView,
+      ),
       recentExecutions: (await db.listRecentExecutionJobs(DASHBOARD_PREVIEW_LIMIT)).map((job) =>
         toAdminExecutionView(job, null),
       ),
-      failedExecutions: (await db.listRecentExecutionJobs(DASHBOARD_PREVIEW_LIMIT, "failed")).map((job) =>
-        toAdminExecutionView(job, null),
+      failedExecutions: (await db.listRecentExecutionJobs(DASHBOARD_PREVIEW_LIMIT, "failed")).map(
+        (job) => toAdminExecutionView(job, null),
       ),
-      topPhoneNumbers: (await db.listSmsIdentityUsage(DASHBOARD_PREVIEW_LIMIT)).map(toAdminIdentityUsageView),
+      topPhoneNumbers: (await db.listSmsIdentityUsage(DASHBOARD_PREVIEW_LIMIT)).map(
+        toAdminIdentityUsageView,
+      ),
     };
   },
 );
