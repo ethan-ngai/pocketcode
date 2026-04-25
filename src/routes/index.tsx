@@ -3,7 +3,7 @@
  * @description Public marketing route for the Pocketcode app.
  * @module routes
  */
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 // @ts-ignore — Vite resolves this at build time as a static URL
 import logoSvgUrl from "../../icon/LOGO.svg?url";
@@ -110,6 +110,7 @@ function IndexRoute(): React.ReactElement {
           <LogoIcon />
         </button>
         <div className="nav-links">
+          <Link to="/demo">Try Demo</Link>
           <button className="nav-cta" type="button" onClick={() => showPage("signup")}>
             Get Started →
           </button>
@@ -557,7 +558,8 @@ button, input, select {
   gap: 1.5rem;
 }
 
-.nav-links button {
+.nav-links button,
+.nav-links a {
   background: transparent;
   border: 0;
   color: var(--slate);
@@ -567,11 +569,13 @@ button, input, select {
   font-weight: 600;
   letter-spacing: 0.03em;
   padding: 0;
+  text-decoration: none;
   text-transform: uppercase;
   transition: color 0.2s;
 }
 
-.nav-links button:hover {
+.nav-links button:hover,
+.nav-links a:hover {
   color: var(--pink);
 }
 

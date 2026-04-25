@@ -29,7 +29,7 @@ export async function runJavaCommand(
   await sandbox.writeFile(`${workspaceDir}/Main.java`, toJavaProgram(request.code));
 
   try {
-    const result = await sandbox.exec("javac Main.java && java Main", {
+    const result = await sandbox.exec("ecj Main.java && java Main", {
       cwd: workspaceDir,
       timeout: request.timeoutMs,
       env: {},

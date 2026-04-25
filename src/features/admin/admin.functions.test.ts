@@ -13,9 +13,8 @@ const testState = vi.hoisted(() => {
     DATABASE_URL: "postgres://admin",
     BETTER_AUTH_SECRET: "auth-secret",
     BETTER_AUTH_URL: "http://localhost",
-    TWILIO_ACCOUNT_SID: "AC123",
-    TWILIO_AUTH_TOKEN: "twilio-token",
-    TWILIO_FROM_NUMBER: "+15555550999",
+    SMS8_API_KEY: "sms8-key",
+    SMS8_DEVICES: '["182|0"]',
     APP_BASE_URL: "http://localhost",
   };
   const request = new Request("http://localhost/app/admin/messages");

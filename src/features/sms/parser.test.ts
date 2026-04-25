@@ -13,13 +13,8 @@ describe("parseSmsCommand", () => {
     ["reset", { kind: "reset" }],
     ["lang py", { kind: "set_language", language: "python" }],
     ["lang python", { kind: "set_language", language: "python" }],
-    ["lang java", { kind: "set_language", language: "java" }],
     ['py print("hi")', { kind: "execute", language: "python", code: 'print("hi")' }],
     ['python print("hi")', { kind: "execute", language: "python", code: 'print("hi")' }],
-    [
-      'java System.out.println("hi");',
-      { kind: "execute", language: "java", code: 'System.out.println("hi");' },
-    ],
     [
       'print("default language")',
       { kind: "execute", language: "python", code: 'print("default language")' },
@@ -28,13 +23,23 @@ describe("parseSmsCommand", () => {
     expect(parseSmsCommand(body)).toEqual(expected);
   });
 
-  it("uses the persisted default language for bare source", () => {
+  it("falls back to Python for bare source when persisted default Java is disabled", () => {
     expect(parseSmsCommand('System.out.println("default");', "java")).toEqual({
       kind: "execute",
-      language: "java",
+      language: "python",
       code: 'System.out.println("default");',
     });
   });
+
+  it.each(["lang java", 'java System.out.println("hi");'])(
+    "returns SMS-safe copy while Java is disabled for %s",
+    (body) => {
+      expect(parseSmsCommand(body)).toEqual({
+        kind: "unknown",
+        reason: "Java is temporarily disabled. Use py <code> for now.",
+      });
+    },
+  );
 
   it("returns SMS-safe copy for unsupported commands", () => {
     expect(parseSmsCommand("lang ruby")).toEqual({

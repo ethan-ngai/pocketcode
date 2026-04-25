@@ -105,6 +105,24 @@ export interface SandboxCommandResult {
  */
 export interface SandboxRuntime {
   /**
+   * Executes source through the Sandbox SDK's native interpreter.
+   * @param code - Source code sent to the interpreter.
+   * @param options - Runtime options scoped to this single execution.
+   * @returns Interpreter logs, rich results, and structured errors.
+   */
+  runCode(
+    code: string,
+    options?: {
+      language?: "python" | "javascript" | "typescript";
+      timeout?: number;
+      envVars?: Record<string, string | undefined>;
+    },
+  ): Promise<{
+    logs: { stdout: string[]; stderr: string[] };
+    error?: { name: string; message: string; traceback: string[]; lineNumber?: number };
+    results: Array<{ text?: string }>;
+  }>;
+  /**
    * Creates a directory inside the sandbox filesystem.
    * @param path - Absolute path isolated for the current execution job.
    * @param options - Directory creation options supported by the SDK.

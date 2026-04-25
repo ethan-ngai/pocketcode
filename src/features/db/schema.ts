@@ -139,7 +139,7 @@ export const smsQuotas = pgTable("sms_quotas", {
 
 /**
  * Provider SMS event log.
- * @remarks Twilio callbacks may be retried, so provider SID uniqueness gives
+ * @remarks Provider callbacks may be retried, so provider id uniqueness gives
  * ingress code an idempotent persistence boundary.
  */
 export const smsMessages = pgTable(
@@ -147,7 +147,7 @@ export const smsMessages = pgTable(
   {
     id: text("id").primaryKey(),
     direction: text("direction").notNull(),
-    provider: text("provider").notNull().default("twilio"),
+    provider: text("provider").notNull().default("sms8"),
     providerMessageSid: text("provider_message_sid").unique(),
     phoneE164: text("phone_e164").notNull(),
     body: text("body"),
@@ -195,7 +195,7 @@ export const replSessions = pgTable(
 /**
  * Sandbox execution lifecycle record.
  * @remarks Jobs are written before sandbox dispatch so retries and admin
- * inspection can reason about queued work independently from Twilio delivery.
+ * inspection can reason about queued work independently from provider delivery.
  */
 export const executionJobs = pgTable(
   "execution_jobs",

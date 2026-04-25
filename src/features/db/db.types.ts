@@ -88,7 +88,7 @@ export type InsertSmsQuota = typeof smsQuotas.$inferInsert;
 
 /**
  * SMS message row shared by ingress, egress, and admin views.
- * @remarks Provider payloads remain opaque here so Twilio-specific details stay
+ * @remarks Provider payloads remain opaque here so provider-specific details stay
  * in the SMS feature.
  */
 export interface SmsMessage {
@@ -115,7 +115,7 @@ export interface SmsMessage {
 /**
  * SMS message insert payload.
  * @remarks The access layer translates public camelCase inputs into this ORM
- * shape so Twilio retry handling remains centralized.
+ * shape so retry handling remains centralized.
  */
 export type InsertSmsMessageRow = typeof smsMessages.$inferInsert;
 

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppAdminRouteRouteImport } from './routes/app/admin/route'
@@ -16,11 +17,15 @@ import { Route as AppAdminIndexRouteImport } from './routes/app/admin/index'
 import { Route as AppAdminUsersRouteImport } from './routes/app/admin/users'
 import { Route as AppAdminMessagesRouteImport } from './routes/app/admin/messages'
 import { Route as AppAdminExecutionsRouteImport } from './routes/app/admin/executions'
-import { Route as ApiTwilioStatusRouteImport } from './routes/api/twilio.status'
-import { Route as ApiTwilioInboundRouteImport } from './routes/api/twilio.inbound'
+import { Route as ApiSms8InboundRouteImport } from './routes/api/sms8.inbound'
 import { Route as ApiReplExecuteRouteImport } from './routes/api/repl.execute'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth.$'
 
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppRouteRoute = AppRouteRouteImport.update({
   id: '/app',
   path: '/app',
@@ -56,14 +61,9 @@ const AppAdminExecutionsRoute = AppAdminExecutionsRouteImport.update({
   path: '/executions',
   getParentRoute: () => AppAdminRouteRoute,
 } as any)
-const ApiTwilioStatusRoute = ApiTwilioStatusRouteImport.update({
-  id: '/api/twilio/status',
-  path: '/api/twilio/status',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiTwilioInboundRoute = ApiTwilioInboundRouteImport.update({
-  id: '/api/twilio/inbound',
-  path: '/api/twilio/inbound',
+const ApiSms8InboundRoute = ApiSms8InboundRouteImport.update({
+  id: '/api/sms8/inbound',
+  path: '/api/sms8/inbound',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiReplExecuteRoute = ApiReplExecuteRouteImport.update({
@@ -80,11 +80,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
+  '/demo': typeof DemoRoute
   '/app/admin': typeof AppAdminRouteRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/repl/execute': typeof ApiReplExecuteRoute
-  '/api/twilio/inbound': typeof ApiTwilioInboundRoute
-  '/api/twilio/status': typeof ApiTwilioStatusRoute
+  '/api/sms8/inbound': typeof ApiSms8InboundRoute
   '/app/admin/executions': typeof AppAdminExecutionsRoute
   '/app/admin/messages': typeof AppAdminMessagesRoute
   '/app/admin/users': typeof AppAdminUsersRoute
@@ -93,10 +93,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
+  '/demo': typeof DemoRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/repl/execute': typeof ApiReplExecuteRoute
-  '/api/twilio/inbound': typeof ApiTwilioInboundRoute
-  '/api/twilio/status': typeof ApiTwilioStatusRoute
+  '/api/sms8/inbound': typeof ApiSms8InboundRoute
   '/app/admin/executions': typeof AppAdminExecutionsRoute
   '/app/admin/messages': typeof AppAdminMessagesRoute
   '/app/admin/users': typeof AppAdminUsersRoute
@@ -106,11 +106,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
+  '/demo': typeof DemoRoute
   '/app/admin': typeof AppAdminRouteRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/repl/execute': typeof ApiReplExecuteRoute
-  '/api/twilio/inbound': typeof ApiTwilioInboundRoute
-  '/api/twilio/status': typeof ApiTwilioStatusRoute
+  '/api/sms8/inbound': typeof ApiSms8InboundRoute
   '/app/admin/executions': typeof AppAdminExecutionsRoute
   '/app/admin/messages': typeof AppAdminMessagesRoute
   '/app/admin/users': typeof AppAdminUsersRoute
@@ -121,11 +121,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/demo'
     | '/app/admin'
     | '/api/auth/$'
     | '/api/repl/execute'
-    | '/api/twilio/inbound'
-    | '/api/twilio/status'
+    | '/api/sms8/inbound'
     | '/app/admin/executions'
     | '/app/admin/messages'
     | '/app/admin/users'
@@ -134,10 +134,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/app'
+    | '/demo'
     | '/api/auth/$'
     | '/api/repl/execute'
-    | '/api/twilio/inbound'
-    | '/api/twilio/status'
+    | '/api/sms8/inbound'
     | '/app/admin/executions'
     | '/app/admin/messages'
     | '/app/admin/users'
@@ -146,11 +146,11 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
+    | '/demo'
     | '/app/admin'
     | '/api/auth/$'
     | '/api/repl/execute'
-    | '/api/twilio/inbound'
-    | '/api/twilio/status'
+    | '/api/sms8/inbound'
     | '/app/admin/executions'
     | '/app/admin/messages'
     | '/app/admin/users'
@@ -160,14 +160,21 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRouteRoute: typeof AppRouteRouteWithChildren
+  DemoRoute: typeof DemoRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiReplExecuteRoute: typeof ApiReplExecuteRoute
-  ApiTwilioInboundRoute: typeof ApiTwilioInboundRoute
-  ApiTwilioStatusRoute: typeof ApiTwilioStatusRoute
+  ApiSms8InboundRoute: typeof ApiSms8InboundRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app': {
       id: '/app'
       path: '/app'
@@ -217,18 +224,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminExecutionsRouteImport
       parentRoute: typeof AppAdminRouteRoute
     }
-    '/api/twilio/status': {
-      id: '/api/twilio/status'
-      path: '/api/twilio/status'
-      fullPath: '/api/twilio/status'
-      preLoaderRoute: typeof ApiTwilioStatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/twilio/inbound': {
-      id: '/api/twilio/inbound'
-      path: '/api/twilio/inbound'
-      fullPath: '/api/twilio/inbound'
-      preLoaderRoute: typeof ApiTwilioInboundRouteImport
+    '/api/sms8/inbound': {
+      id: '/api/sms8/inbound'
+      path: '/api/sms8/inbound'
+      fullPath: '/api/sms8/inbound'
+      preLoaderRoute: typeof ApiSms8InboundRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/repl/execute': {
@@ -281,10 +281,10 @@ const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRouteRoute: AppRouteRouteWithChildren,
+  DemoRoute: DemoRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiReplExecuteRoute: ApiReplExecuteRoute,
-  ApiTwilioInboundRoute: ApiTwilioInboundRoute,
-  ApiTwilioStatusRoute: ApiTwilioStatusRoute,
+  ApiSms8InboundRoute: ApiSms8InboundRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

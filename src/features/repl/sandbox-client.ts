@@ -7,7 +7,6 @@ import { getSandbox } from "@cloudflare/sandbox";
 
 import type { Env } from "../../shared/env";
 import { SMS_MAX_SOURCE_CHARS } from "../sms/sms.types";
-import { runJavaCommand } from "./languages/java";
 import { runPythonCommand } from "./languages/python";
 import type {
   ExecutionRequest,
@@ -60,12 +59,8 @@ export async function executeInSandbox(
   const sandbox = getSandbox(env.Sandbox, request.id, { sleepAfter: "1m" }) as SandboxRuntime & {
     destroy?: () => Promise<void>;
   };
-  const workspaceDir = `/workspace/jobs/${request.id}`;
-
   try {
-    await sandbox.mkdir(workspaceDir, { recursive: true });
-
-    const result = await runLanguageCommand(sandbox, request, workspaceDir);
+    const result = await runLanguageCommand(sandbox, request, `/workspace/jobs/${request.id}`);
 
     return {
       status: result.timedOut ? "timed_out" : result.exitCode === 0 ? "succeeded" : "failed",
@@ -113,7 +108,12 @@ async function runLanguageCommand(
     case "python":
       return await runPythonCommand(sandbox, request, workspaceDir);
     case "java":
-      return await runJavaCommand(sandbox, request, workspaceDir);
+      return {
+        stdout: "",
+        stderr: "Java execution is temporarily disabled. Use Python for now.",
+        exitCode: null,
+        timedOut: false,
+      };
   }
 }
 
@@ -133,11 +133,11 @@ function validateExecutionRequest(request: ExecutionRequest): string | null {
     return "Invalid execution policy.";
   }
 
-  if (request.language === "python" && hasPythonRejectedPattern(request.code)) {
-    return "Code rejected by safety policy.";
+  if (request.language === "java") {
+    return "Java execution is temporarily disabled. Use Python for now.";
   }
 
-  if (request.language === "java" && hasJavaRejectedPattern(request.code)) {
+  if (request.language === "python" && hasPythonRejectedPattern(request.code)) {
     return "Code rejected by safety policy.";
   }
 
@@ -151,17 +151,6 @@ function validateExecutionRequest(request: ExecutionRequest): string | null {
  */
 function hasPythonRejectedPattern(code: string): boolean {
   return /\bimport\s+(socket|subprocess|os|urllib|http\.client|ftplib|requests)\b|from\s+(socket|subprocess|os|urllib|http\.client|ftplib|requests)\s+import\b|open\(\s*["']\/|while\s+True\s*:/.test(
-    code,
-  );
-}
-
-/**
- * Checks for low-effort Java abuse patterns.
- * @param code - Java source submitted by an SMS or manual user.
- * @returns True when the source should be rejected before sandbox dispatch.
- */
-function hasJavaRejectedPattern(code: string): boolean {
-  return /Runtime\.getRuntime\(\)|ProcessBuilder|System\.getenv|Files\.walk\(\s*["']\/|java\.net|HttpClient|URLConnection/.test(
     code,
   );
 }

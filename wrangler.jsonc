@@ -4,13 +4,20 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-04-25",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "pocketcode.ethanngai.com",
+      "custom_domain": true,
+    },
+  ],
   "assets": {
     "directory": ".output/public",
   },
   "containers": [
     {
       "class_name": "Sandbox",
-      "image": "./Dockerfile",
+      "image": "docker.io/cloudflare/sandbox:0.9.0-python",
       "instance_type": "lite",
       "max_instances": 4,
     },

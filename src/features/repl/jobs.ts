@@ -30,7 +30,7 @@ export interface RunExecutionJobInput {
  * @param input - Job, owner, persistence, and environment dependencies.
  * @returns Terminal execution result after persistence has been attempted.
  * @remarks Result SMS delivery happens in the SMS feature after this returns, so
- * REPL orchestration does not need Twilio credentials or provider types.
+ * REPL orchestration does not need SMS provider credentials or provider types.
  */
 export async function runExecutionJob(input: RunExecutionJobInput): Promise<ExecutionResult> {
   await input.db.markExecutionRunning(input.job.id, input.job.id);

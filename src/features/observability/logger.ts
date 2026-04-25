@@ -6,7 +6,8 @@
 import type { Logger, LoggerOptions, LogLevel, LogMetadata } from "./logger.types";
 
 const REDACTED = "[redacted]";
-const SECRET_KEY_PATTERN = /(auth.?token|token|secret|password|database.?url|db.?url|connection.?string)/i;
+const SECRET_KEY_PATTERN =
+  /(auth.?token|api.?key|token|secret|password|database.?url|db.?url|connection.?string)/i;
 const BODY_KEY_PATTERN = /^(body|code|source|sourceCode|fullCode)$/i;
 
 /**

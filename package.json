@@ -5,8 +5,9 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "deploy": "wrangler deploy",
+    "deploy": "pnpm build && wrangler deploy --keep-vars",
     "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "cf-typegen": "wrangler types",
     "check": "tsc --noEmit",
     "test": "vitest run"

@@ -10,7 +10,7 @@ import { getAdminMessages } from "../../../features/admin/admin.functions";
 
 /**
  * Admin messages route definition.
- * @remarks The route delegates display to the admin feature so Twilio message
+ * @remarks The route delegates display to the admin feature so provider message
  * persistence can evolve without route-level rewrites.
  */
 export const Route = createFileRoute("/app/admin/messages")({

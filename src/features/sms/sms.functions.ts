@@ -13,17 +13,16 @@ import { hashLogValue, log, logger } from "../observability/logger";
 import {
   DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
   DEFAULT_EXECUTION_TIMEOUT_MS,
-  DEFAULT_JAVA_EXECUTION_TIMEOUT_MS,
 } from "../security/quotas";
 import { checkSmsExecutionRateLimit } from "../security/rate-limit";
 import { parseSmsCommand } from "./parser";
-import { createTwiMlResponse, formatExecutionSmsMessages, SMS_HELP_TEXT } from "./responder";
-import { validateTwilioRequest } from "./signatures";
+import { createSmsWebhookResponse, formatExecutionSmsMessages, SMS_HELP_TEXT } from "./responder";
+import { validateSms8Request } from "./signatures";
 import type { InboundSmsMessage } from "./sms.types";
-import { sendSms } from "./twilio";
+import { sendSms } from "./sms8";
 
 /**
- * Cloudflare-compatible `waitUntil` callback used to finish execution after TwiML.
+ * Cloudflare-compatible `waitUntil` callback used to finish SMS work after acknowledgement.
  * @remarks Tests can pass a collector while Workers pass `cloudflare:workers` waitUntil.
  */
 export type WaitUntil = (promise: Promise<unknown>) => void;
@@ -38,21 +37,21 @@ export interface SmsDependencies {
   db?: Db;
   /** Execution runner owned by the REPL workstream. */
   runJob?: typeof runExecutionJob;
-  /** Outbound SMS sender owned by the Twilio provider boundary. */
+  /** Outbound SMS sender owned by the SMS8 provider boundary. */
   sendSms?: typeof sendSms;
 }
 
 /**
- * Handles Twilio inbound SMS webhooks.
- * @param request - Server route request containing Twilio's form webhook body.
- * @param env - Worker bindings for Twilio credentials and execution policy.
- * @param waitUntil - Background task scheduler used to return TwiML quickly.
+ * Handles SMS8 inbound SMS webhooks.
+ * @param request - Server route request containing SMS8's form webhook body.
+ * @param env - Worker bindings for SMS8 credentials and execution policy.
+ * @param waitUntil - Background task scheduler used to acknowledge SMS8 quickly.
  * @param dependencies - Optional test/runtime overrides for adjacent workstreams.
- * @returns TwiML response for inbound webhooks.
- * @remarks Execution commands intentionally return before sandbox completion and
- * send their final result later through Twilio REST.
+ * @returns Plain webhook acknowledgement once inbound messages are persisted.
+ * @remarks SMS8 does not consume TwiML responses, so all user-visible replies
+ * are sent through the SMS8 API while the webhook returns quickly.
  */
-export async function handleTwilioInbound(
+export async function handleSms8Inbound(
   request: Request,
   env: Env,
   waitUntil: WaitUntil = defaultWaitUntil,
@@ -60,108 +59,87 @@ export async function handleTwilioInbound(
 ): Promise<Response> {
   try {
     const parsedBody = await parseWebhookForm(request);
+    const messagesJson = requireFormValue(parsedBody, "messages");
 
-    if (!(await validateTwilioRequest(request, env, parsedBody))) {
-      logTwilioSignatureFailure(request, parsedBody);
-      return new Response("Invalid Twilio signature", { status: 403 });
+    if (!(await validateSms8Request(request, env, messagesJson))) {
+      logSms8SignatureFailure(request, parsedBody);
+      return new Response("Invalid SMS8 signature", { status: 403 });
     }
 
-    const inbound = normalizeInboundSms(parsedBody);
+    const inboundMessages = normalizeInboundSmsMessages(messagesJson);
     const db = resolveDb(env, dependencies);
 
-    logger.info("sms.inbound.received", {
-      messageSid: inbound.providerMessageSid,
-      phoneHash: hashLogValue(inbound.fromE164),
-    });
-
-    if (inbound.providerMessageSid) {
-      const existing = await db.findSmsMessageByProviderSid(inbound.providerMessageSid);
-
-      if (existing?.direction === "inbound") {
-        return twimlResponse();
-      }
+    for (const inbound of inboundMessages) {
+      await processInboundMessage({ inbound, db, dependencies, env, waitUntil });
     }
 
-    const message = await db.insertInboundSms({
-      direction: "inbound",
-      providerMessageSid: inbound.providerMessageSid,
-      phoneE164: inbound.fromE164,
-      body: inbound.body,
-      status: "received",
-      rawPayload: inbound.rawPayload,
-    });
-    const identity = await db.findOrCreateSmsIdentity(inbound.fromE164);
-    const access = checkSmsAllowlist(env, identity.phoneE164);
-    const session = await db.getActiveSession(identity.id);
-    const currentDefaultLanguage = session?.language ?? identity.defaultLanguage;
-    const command = parseSmsCommand(inbound.body, currentDefaultLanguage);
-
-    return await dispatchInboundCommand({
-      command,
-      currentDefaultLanguage,
-      db,
-      dependencies,
-      env,
-      access,
-      identity,
-      message,
-      waitUntil,
-    });
+    return webhookResponse();
   } catch (error) {
-    log("error", "Twilio inbound webhook failed", { error: errorToLog(error) });
-    return twimlResponse("Temporary SMS service error.", 500);
+    log("error", "SMS8 inbound webhook failed", { error: errorToLog(error) });
+    return webhookResponse("Temporary SMS service error.", 500);
   }
 }
 
 /**
- * Handles Twilio outbound delivery status callbacks.
- * @param request - Server route request containing Twilio's status form body.
- * @param env - Worker bindings for signature validation and future DB access.
- * @param dependencies - Optional test/runtime overrides for adjacent workstreams.
- * @returns Empty response when the callback has been accepted.
- * @remarks Status callbacks should never trigger execution; they only update the
- * provider event row associated with an outbound message SID.
+ * Processes one normalized inbound SMS8 message.
+ * @param input - Webhook context plus normalized provider payload.
+ * @returns Promise that resolves after immediate persistence and scheduling.
+ * @remarks SMS8 may batch messages in one webhook, so each message gets its own
+ * idempotency check and background reply work.
  */
-export async function handleTwilioStatus(
-  request: Request,
-  env: Env,
-  dependencies: SmsDependencies = {},
-): Promise<Response> {
-  try {
-    const parsedBody = await parseWebhookForm(request);
+async function processInboundMessage(input: {
+  inbound: InboundSmsMessage;
+  db: Db;
+  dependencies: SmsDependencies;
+  env: Env;
+  waitUntil: WaitUntil;
+}): Promise<void> {
+  logger.info("sms.inbound.received", {
+    messageSid: input.inbound.providerMessageSid,
+    phoneHash: hashLogValue(input.inbound.fromE164),
+  });
 
-    if (!(await validateTwilioRequest(request, env, parsedBody))) {
-      logTwilioSignatureFailure(request, parsedBody);
-      return new Response("Invalid Twilio signature", { status: 403 });
+  if (input.inbound.providerMessageSid) {
+    const existing = await input.db.findSmsMessageByProviderSid(input.inbound.providerMessageSid);
+
+    if (existing?.direction === "inbound") {
+      return;
     }
-
-    const providerMessageSid = requireFormValue(parsedBody, "MessageSid");
-    const status =
-      parsedBody.get("MessageStatus") ?? parsedBody.get("SmsStatus") ?? parsedBody.get("Status");
-
-    if (!status) {
-      return new Response("Missing status", { status: 400 });
-    }
-
-    await resolveDb(env, dependencies).updateSmsStatus({
-      providerMessageSid,
-      status,
-      rawPayload: formToPayload(parsedBody),
-    });
-
-    return new Response(null, { status: 204 });
-  } catch (error) {
-    log("error", "Twilio status webhook failed", { error: errorToLog(error) });
-    return new Response("Status callback failed", { status: 500 });
   }
+
+  const message = await input.db.insertInboundSms({
+    direction: "inbound",
+    providerMessageSid: input.inbound.providerMessageSid,
+    phoneE164: input.inbound.fromE164,
+    body: input.inbound.body,
+    status: "received",
+    rawPayload: input.inbound.rawPayload,
+  });
+  const identity = await input.db.findOrCreateSmsIdentity(input.inbound.fromE164);
+  const access = checkSmsAllowlist(input.env, identity.phoneE164);
+  const session = await input.db.getActiveSession(identity.id);
+  const currentDefaultLanguage = session?.language ?? identity.defaultLanguage;
+  const command = parseSmsCommand(input.inbound.body, currentDefaultLanguage);
+
+  await dispatchInboundCommand({
+    command,
+    currentDefaultLanguage,
+    db: input.db,
+    dependencies: input.dependencies,
+    env: input.env,
+    access,
+    identity,
+    message,
+    waitUntil: input.waitUntil,
+  });
 }
 
 /**
  * Dispatches a parsed SMS command.
  * @param input - Parsed command plus persistence and provider dependencies.
- * @returns Immediate TwiML response for Twilio.
- * @remarks Cheap commands complete inline, while execution is scheduled in the
- * request context to keep Twilio retry behavior predictable.
+ * @returns Promise that resolves once command side effects are scheduled.
+ * @remarks Cheap commands still reply by SMS, but the webhook response remains
+ * provider-neutral so SMS8 retries do not depend on user-facing copy.
  */
 async function dispatchInboundCommand(input: {
   access: SmsAccessDecision;
@@ -173,18 +151,28 @@ async function dispatchInboundCommand(input: {
   identity: SmsIdentity;
   message: SmsMessage;
   waitUntil: WaitUntil;
-}): Promise<Response> {
+}): Promise<void> {
   switch (input.command.kind) {
     case "help":
-      return twimlResponse(SMS_HELP_TEXT);
+      input.waitUntil(sendReplySms({ ...input, body: SMS_HELP_TEXT, replyKind: "help" }));
+      return;
     case "unknown":
-      return twimlResponse(input.command.reason);
+      input.waitUntil(sendReplySms({ ...input, body: input.command.reason, replyKind: "unknown" }));
+      return;
     case "reset":
       await input.db.resetActiveSession(input.identity.id);
-      return twimlResponse("Session reset.");
+      input.waitUntil(sendReplySms({ ...input, body: "Session reset.", replyKind: "reset" }));
+      return;
     case "set_language":
       await input.db.upsertSessionLanguage(input.identity.id, input.command.language);
-      return twimlResponse(`Default language set to ${formatLanguage(input.command.language)}.`);
+      input.waitUntil(
+        sendReplySms({
+          ...input,
+          body: `Default language set to ${formatLanguage(input.command.language)}.`,
+          replyKind: "set_language",
+        }),
+      );
+      return;
     case "execute": {
       if (!input.access.allowed) {
         log("info", "SMS execution refused by allowlist", {
@@ -192,7 +180,10 @@ async function dispatchInboundCommand(input: {
           reason: input.access.reason,
         });
 
-        return twimlResponse(input.access.message);
+        input.waitUntil(
+          sendReplySms({ ...input, body: input.access.message, replyKind: "access_denied" }),
+        );
+        return;
       }
 
       const limitDecision = await checkSmsExecutionRateLimit(input.db, input.identity.phoneE164);
@@ -204,7 +195,14 @@ async function dispatchInboundCommand(input: {
           retryAfterSeconds: limitDecision.retryAfterSeconds,
         });
 
-        return twimlResponse(limitDecision.message ?? "Execution limit reached.");
+        input.waitUntil(
+          sendReplySms({
+            ...input,
+            body: limitDecision.message ?? "Execution limit reached.",
+            replyKind: "rate_limited",
+          }),
+        );
+        return;
       }
 
       const job = await input.db.createExecutionJob({
@@ -225,13 +223,46 @@ async function dispatchInboundCommand(input: {
         job.id,
       );
       input.waitUntil(sendExecutionResultSms({ ...input, job }));
-      return twimlResponse("Running code...");
+      return;
     }
   }
 }
 
 /**
- * Runs an execution job and sends final result chunks through Twilio.
+ * Sends and persists a user-visible SMS reply.
+ * @param input - Reply body plus workflow context captured from the inbound SMS.
+ * @returns Promise that resolves once provider and DB persistence complete.
+ * @remarks SMS8 lacks TwiML-style inline replies, so even cheap command responses
+ * use the outbound API and are recorded in the same audit table as results.
+ */
+async function sendReplySms(input: {
+  body: string;
+  db: Db;
+  dependencies: SmsDependencies;
+  env: Env;
+  identity: SmsIdentity;
+  message: SmsMessage;
+  replyKind: string;
+}): Promise<void> {
+  const send = input.dependencies.sendSms ?? sendSms;
+  const sent = await send({
+    to: input.identity.phoneE164,
+    body: input.body,
+    env: input.env,
+  });
+
+  await input.db.insertOutboundSms({
+    direction: "outbound",
+    providerMessageSid: sent.providerMessageSid,
+    phoneE164: input.identity.phoneE164,
+    body: input.body,
+    status: "queued",
+    rawPayload: { inboundMessageId: input.message.id, replyKind: input.replyKind },
+  });
+}
+
+/**
+ * Runs an execution job and sends final result chunks through SMS8.
  * @param input - Runtime context captured before the webhook response is returned.
  * @returns Promise that resolves once result delivery attempts are complete.
  */
@@ -273,7 +304,6 @@ async function sendExecutionResultSms(input: {
       to: input.identity.phoneE164,
       body,
       env: input.env,
-      statusCallbackUrl: getStatusCallbackUrl(input.env),
     });
 
     await input.db.insertOutboundSms({
@@ -297,71 +327,94 @@ async function sendExecutionResultSms(input: {
 }
 
 /**
- * Parses a Twilio form body without trusting any field values.
+ * Parses an SMS8 form body without trusting any field values.
  * @param request - Webhook request with an x-www-form-urlencoded body.
  * @returns Parsed form parameters.
- * @remarks Reading text keeps signature validation aligned with Twilio's
- * form-encoded webhook contract and avoids multipart buffering surprises.
+ * @remarks Reading text keeps signature validation aligned with SMS8's
+ * form-encoded webhook contract without reserializing signed fields.
  */
 async function parseWebhookForm(request: Request): Promise<URLSearchParams> {
   return new URLSearchParams(await request.text());
 }
 
 /**
- * Normalizes required inbound Twilio fields.
- * @param parsedBody - Parsed Twilio webhook form parameters.
+ * Normalizes required inbound SMS8 message records.
+ * @param messagesJson - Raw JSON array from SMS8's `messages` form field.
+ * @returns Provider-neutral inbound SMS messages.
+ */
+function normalizeInboundSmsMessages(messagesJson: string): InboundSmsMessage[] {
+  let messages: unknown;
+
+  try {
+    messages = JSON.parse(messagesJson);
+  } catch {
+    throw new Error("Invalid SMS8 messages payload");
+  }
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new Error("SMS8 messages payload must be a non-empty array");
+  }
+
+  return messages.map(normalizeInboundSmsMessage);
+}
+
+/**
+ * Normalizes one SMS8 message record.
+ * @param rawMessage - Parsed SMS8 message object from the webhook payload.
  * @returns Provider-neutral inbound SMS message.
  */
-function normalizeInboundSms(parsedBody: URLSearchParams): InboundSmsMessage {
-  const fromE164 = requireFormValue(parsedBody, "From");
+function normalizeInboundSmsMessage(rawMessage: unknown): InboundSmsMessage {
+  if (!isSms8Message(rawMessage)) {
+    throw new Error("Invalid SMS8 message record");
+  }
+
+  const fromE164 = rawMessage.number.trim();
 
   if (!isLikelyE164(fromE164)) {
-    throw new Error("Twilio From value must be E.164");
+    throw new Error("SMS8 number value must be E.164");
   }
 
   return {
-    providerMessageSid: parsedBody.get("MessageSid"),
+    providerMessageSid:
+      rawMessage.ID === undefined || rawMessage.ID === null ? null : String(rawMessage.ID),
     fromE164,
-    to: parsedBody.get("To"),
-    body: parsedBody.get("Body") ?? "",
-    rawPayload: formToPayload(parsedBody),
+    to: null,
+    body: rawMessage.message,
+    rawPayload: rawMessage as Record<string, unknown>,
   };
 }
 
 /**
- * Converts form parameters into a JSON-safe payload.
- * @param parsedBody - Parsed provider form body.
- * @returns Plain object preserving duplicate keys as arrays.
+ * Checks whether a parsed value contains the SMS8 fields Pocketcode needs.
+ * @param value - Parsed JSON value from the provider payload.
+ * @returns True when the value can be normalized into an inbound SMS.
  */
-function formToPayload(parsedBody: URLSearchParams): Record<string, string | string[]> {
-  const payload: Record<string, string | string[]> = {};
-
-  for (const [key, value] of parsedBody.entries()) {
-    const existing = payload[key];
-
-    if (Array.isArray(existing)) {
-      existing.push(value);
-    } else if (existing !== undefined) {
-      payload[key] = [existing, value];
-    } else {
-      payload[key] = value;
-    }
-  }
-
-  return payload;
+function isSms8Message(value: unknown): value is {
+  ID?: number | string | null;
+  message: string;
+  number: string;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "number" in value &&
+    typeof value.number === "string" &&
+    "message" in value &&
+    typeof value.message === "string"
+  );
 }
 
 /**
  * Requires a provider form field.
  * @param parsedBody - Parsed provider form body.
- * @param key - Field name documented by Twilio.
+ * @param key - Field name documented by the provider.
  * @returns Non-empty form value.
  */
 function requireFormValue(parsedBody: URLSearchParams, key: string): string {
   const value = parsedBody.get(key)?.trim();
 
   if (!value) {
-    throw new Error(`Missing Twilio ${key} field`);
+    throw new Error(`Missing SMS8 ${key} field`);
   }
 
   return value;
@@ -409,7 +462,7 @@ type SmsAccessDecision =
 /**
  * Checks whether a phone number may create execution jobs.
  * @param env - Worker bindings carrying the temporary pilot allowlist.
- * @param phoneE164 - Sender phone number after Twilio normalization.
+ * @param phoneE164 - Sender phone number after provider normalization.
  * @returns Access decision for job creation.
  * @remarks Non-production deployments keep an unset allowlist permissive so
  * local webhook tests do not require pilot configuration; production denies
@@ -447,15 +500,15 @@ function checkSmsAllowlist(env: Env, phoneE164: string): SmsAccessDecision {
 }
 
 /**
- * Creates a TwiML response with the expected content type.
- * @param message - Optional immediate SMS reply.
- * @param status - HTTP status returned to Twilio.
- * @returns Response containing valid TwiML XML.
+ * Creates a plain webhook response with the expected content type.
+ * @param message - Optional acknowledgement or diagnostic message.
+ * @param status - HTTP status returned to SMS8.
+ * @returns Response containing provider-neutral acknowledgement text.
  */
-function twimlResponse(message?: string, status = 200): Response {
-  return new Response(createTwiMlResponse(message), {
+function webhookResponse(message?: string, status = 200): Response {
+  return new Response(createSmsWebhookResponse(message), {
     status,
-    headers: { "content-type": "text/xml; charset=utf-8" },
+    headers: { "content-type": "text/plain; charset=utf-8" },
   });
 }
 
@@ -490,24 +543,10 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
  * @param env - Worker bindings that may override the default execution budget.
  * @param language - Runtime selected by parser or user session state.
  * @returns Timeout in milliseconds captured on the execution job.
- * @remarks Java gets a slightly longer MVP default for compile startup while
- * explicit environment configuration still wins for all runtimes.
+ * @remarks The environment override still wins while Java support is disabled.
  */
-function getExecutionTimeoutMs(env: Env, language: ReplLanguage): number {
-  return parsePositiveInteger(
-    env.EXECUTION_TIMEOUT_MS,
-    language === "java" ? DEFAULT_JAVA_EXECUTION_TIMEOUT_MS : DEFAULT_EXECUTION_TIMEOUT_MS,
-  );
-}
-
-/**
- * Builds the public status callback URL when the app origin is configured.
- * @param env - Worker bindings containing the public app base URL.
- * @returns Absolute status callback URL or undefined.
- */
-function getStatusCallbackUrl(env: Env): string | undefined {
-  const baseUrl = env.APP_BASE_URL?.trim();
-  return baseUrl ? new URL("/api/twilio/status", baseUrl).toString() : undefined;
+function getExecutionTimeoutMs(env: Env, _language: ReplLanguage): number {
+  return parsePositiveInteger(env.EXECUTION_TIMEOUT_MS, DEFAULT_EXECUTION_TIMEOUT_MS);
 }
 
 /**
@@ -521,18 +560,18 @@ function defaultWaitUntil(promise: Promise<unknown>): void {
 }
 
 /**
- * Logs a rejected Twilio webhook without persisting provider body content.
+ * Logs a rejected SMS8 webhook without persisting provider body content.
  * @param request - Request that failed signature validation.
  * @param parsedBody - Parsed form used only for low-cardinality metadata.
  * @remarks Forged webhooks are expected during probing, so the log keeps enough
  * context for triage without storing SMS text or raw payloads.
  */
-function logTwilioSignatureFailure(request: Request, parsedBody: URLSearchParams): void {
-  log("warn", "Rejected Twilio webhook signature", {
+function logSms8SignatureFailure(request: Request, parsedBody: URLSearchParams): void {
+  log("warn", "Rejected SMS8 webhook signature", {
     path: new URL(request.url).pathname,
-    hasSignature: request.headers.has("x-twilio-signature"),
-    providerMessageSidHash: hashLogValue(parsedBody.get("MessageSid")),
-    fromHash: hashLogValue(parsedBody.get("From")),
+    hasSignature:
+      request.headers.has("x-sg-signature") || request.headers.has("http_x_sg_signature"),
+    messagesHash: hashLogValue(parsedBody.get("messages")),
   });
 }
 

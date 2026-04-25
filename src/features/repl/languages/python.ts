@@ -16,34 +16,57 @@ export const pythonLanguage = "python";
  * Executes a Python one-shot job in an isolated sandbox workspace.
  * @param sandbox - Cloudflare Sandbox runtime scoped to the execution job.
  * @param request - Normalized execution request with code and timeout policy.
- * @param workspaceDir - Absolute directory reserved for this job.
+ * @param _workspaceDir - Reserved job directory kept for adapter parity.
  * @returns Captured command result normalized for the REPL job layer.
- * @remarks User code is written to a file and executed through a fixed command,
- * avoiding shell interpolation of untrusted source text.
+ * @remarks Uses the Sandbox SDK's native interpreter instead of shelling out to
+ * `python3`, which avoids managing transient source files for simple SMS jobs.
  */
 export async function runPythonCommand(
   sandbox: SandboxRuntime,
   request: ExecutionRequest,
-  workspaceDir: string,
+  _workspaceDir: string,
 ): Promise<SandboxCommandResult> {
-  await sandbox.writeFile(`${workspaceDir}/main.py`, request.code);
-
   try {
-    const result = await sandbox.exec("python3 main.py", {
-      cwd: workspaceDir,
+    const result = await sandbox.runCode(request.code, {
+      language: "python",
       timeout: request.timeoutMs,
-      env: {},
+      envVars: {},
     });
+    const resultText = result.results
+      .map((entry) => entry.text)
+      .filter((text): text is string => Boolean(text))
+      .join("\n");
+    const stdout = [result.logs.stdout.join(""), resultText].filter(Boolean).join("\n");
+    const stderr = [
+      result.logs.stderr.join(""),
+      result.error ? formatExecutionError(result.error) : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
+      stdout,
+      stderr,
+      exitCode: result.error ? 1 : 0,
       timedOut: false,
     };
   } catch (error) {
     return commandErrorToResult(error, request.timeoutMs);
   }
+}
+
+/**
+ * Formats interpreter errors into terminal-style stderr.
+ * @param error - Structured interpreter error from the Sandbox SDK.
+ * @returns Traceback text when available, otherwise a concise error line.
+ */
+function formatExecutionError(error: {
+  name: string;
+  message: string;
+  traceback: string[];
+  lineNumber?: number;
+}): string {
+  return error.traceback.length > 0 ? error.traceback.join("\n") : `${error.name}: ${error.message}`;
 }
 
 /**

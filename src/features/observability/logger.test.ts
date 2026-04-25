@@ -19,7 +19,7 @@ describe("createLogger", () => {
 
     createLogger({ sink }).info("execution.finished", {
       jobId: "job_1",
-      TWILIO_AUTH_TOKEN: "secret",
+      SMS8_API_KEY: "secret",
       DATABASE_URL: "postgres://secret",
       code: "print(secret)",
       nested: { body: "sms body" },
@@ -33,7 +33,7 @@ describe("createLogger", () => {
     expect(emitted.event).toBe("execution.finished");
     expect(emitted.metadata).toMatchObject({
       jobId: "job_1",
-      TWILIO_AUTH_TOKEN: "[redacted]",
+      SMS8_API_KEY: "[redacted]",
       DATABASE_URL: "[redacted]",
       code: "[redacted]",
       nested: { body: "[redacted]" },

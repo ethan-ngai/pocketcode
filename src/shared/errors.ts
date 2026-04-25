@@ -7,7 +7,7 @@
 /**
  * Error with a stable code and HTTP status.
  * @remarks Route stubs and future feature modules can preserve machine-readable
- * failure codes without leaking implementation exceptions to Twilio or admins.
+ * failure codes without leaking implementation exceptions to providers or admins.
  */
 export class AppError extends Error {
   /** Stable error code used by logs and API responses. */

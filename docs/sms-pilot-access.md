@@ -10,6 +10,16 @@ To add a pilot user, append their E.164 phone number to `SMS_ALLOWLIST` and rede
 
 Non-production environments permit execution when `SMS_ALLOWLIST` is unset so local webhook tests and demos can run without production pilot configuration. Production fails closed when `ENVIRONMENT=production` and `SMS_ALLOWLIST` is blank.
 
+## SMS8 Configuration
+
+Production SMS traffic uses SMS8.io. Configure the SMS8 webhook URL as:
+
+```txt
+https://<production-host>/api/sms8/inbound
+```
+
+Set `SMS8_API_KEY` to the account API key and `SMS8_DEVICES` to a JSON array of device/SIM routes, for example `["182|0"]`. Keep `SMS8_WEBHOOK_AUTH_ENABLED=true` outside local development so inbound webhooks must include a valid `HTTP_X_SG_SIGNATURE` / `X-SG-Signature` HMAC.
+
 ## Sandbox Network Risk
 
 As of `@cloudflare/sandbox` 0.9, the SDK exposes sandbox lifecycle, timeout, transport, and command-isolation options, but not an option to disable outbound network access for code running inside the container. The launch policy therefore remains invite-only until Cloudflare exposes network-disabled execution or the project adds a separate enforcement layer.

@@ -19,16 +19,15 @@ const request: ExecutionRequest = {
 };
 
 describe("runPythonCommand", () => {
-  it("writes user code to a file and executes a fixed command", async () => {
+  it("executes user code through the native interpreter", async () => {
     const calls: string[] = [];
     const sandbox: SandboxRuntime = {
       mkdir: async () => undefined,
-      writeFile: async (path, content) => {
-        calls.push(`${path}:${content}`);
-      },
-      exec: async (command, options) => {
-        calls.push(`${command}:${options?.cwd}:${options?.timeout}`);
-        return { success: true, exitCode: 0, stdout: "hi\n", stderr: "" };
+      writeFile: async () => undefined,
+      exec: async () => ({ success: true, exitCode: 0, stdout: "", stderr: "" }),
+      runCode: async (code, options) => {
+        calls.push(`${code}:${options?.language}:${options?.timeout}`);
+        return { logs: { stdout: ["hi\n"], stderr: [] }, results: [] };
       },
     };
 
@@ -38,22 +37,43 @@ describe("runPythonCommand", () => {
       exitCode: 0,
       timedOut: false,
     });
-    expect(calls).toEqual([
-      '/workspace/jobs/job_test/main.py:print("hi")',
-      "python3 main.py:/workspace/jobs/job_test:5000",
-    ]);
+    expect(calls).toEqual(['print("hi"):python:5000']);
+  });
+
+  it("includes expression results in stdout", async () => {
+    const sandbox: SandboxRuntime = {
+      mkdir: async () => undefined,
+      writeFile: async () => undefined,
+      exec: async () => ({ success: true, exitCode: 0, stdout: "", stderr: "" }),
+      runCode: async () => ({
+        logs: { stdout: [], stderr: [] },
+        results: [{ text: "4" }],
+      }),
+    };
+
+    await expect(runPythonCommand(sandbox, { ...request, code: "2 + 2" }, "/unused")).resolves.toEqual(
+      {
+        stdout: "4",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+      },
+    );
   });
 
   it("normalizes timeout exceptions", async () => {
     const sandbox: SandboxRuntime = {
       mkdir: async () => undefined,
       writeFile: async () => undefined,
-      exec: async () => {
+      exec: async () => ({ success: true, exitCode: 0, stdout: "", stderr: "" }),
+      runCode: async () => {
         throw new Error("Command timed out");
       },
     };
 
-    await expect(runPythonCommand(sandbox, request, "/workspace/jobs/job_test")).resolves.toMatchObject({
+    await expect(
+      runPythonCommand(sandbox, request, "/workspace/jobs/job_test"),
+    ).resolves.toMatchObject({
       stdout: "",
       stderr: "Timed out after 5s.",
       exitCode: null,

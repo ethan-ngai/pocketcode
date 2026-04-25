@@ -10,8 +10,8 @@ import type { Env } from "../../shared/env";
 
 /**
  * Manual execution route definition.
- * @remarks This endpoint is reserved for admin/internal smoke tests and must
- * delegate execution policy to the REPL feature.
+ * @remarks This endpoint is temporarily open for deployment smoke tests and
+ * delegates execution policy to the REPL feature.
  */
 export const Route = createFileRoute("/api/repl/execute")({
   server: {

@@ -1,6 +1,6 @@
 /**
- * @file twilio-inbound.test.ts
- * @description Integration coverage for Twilio webhook handling without Twilio or sandbox execution.
+ * @file sms8-inbound.test.ts
+ * @description Integration coverage for SMS8 webhook handling without SMS8 or sandbox execution.
  * @module tests
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,7 +32,7 @@ vi.mock("../../src/features/db/client", () => ({
 }));
 
 import type { Env } from "../../src/shared/env";
-import { handleTwilioInbound, type WaitUntil } from "../../src/features/sms/sms.functions";
+import { handleSms8Inbound, type WaitUntil } from "../../src/features/sms/sms.functions";
 import type { SmsDependencies } from "../../src/features/sms/sms.functions";
 import { runExecutionJob } from "../../src/features/repl/jobs";
 import { createInMemoryDb, type InMemoryDb } from "../helpers/in-memory-db";
@@ -41,15 +41,14 @@ const env: Env = {
   DATABASE_URL: "postgres://example",
   BETTER_AUTH_SECRET: "auth-secret",
   BETTER_AUTH_URL: "http://localhost",
-  TWILIO_ACCOUNT_SID: "AC123",
-  TWILIO_AUTH_TOKEN: "test-token",
-  TWILIO_FROM_NUMBER: "+15555550999",
+  SMS8_API_KEY: "test-key",
+  SMS8_DEVICES: '["182|0"]',
   APP_BASE_URL: "http://localhost",
   EXECUTION_TIMEOUT_MS: "5000",
   EXECUTION_MAX_OUTPUT_CHARS: "4000",
 };
 
-describe("handleTwilioInbound", () => {
+describe("handleSms8Inbound", () => {
   beforeEach(() => {
     dbClientMock.productionDb = undefined;
     dbClientMock.createPostgresDb.mockClear();
@@ -60,7 +59,7 @@ describe("handleTwilioInbound", () => {
     const sentMessages: string[] = [];
     const pending: Promise<unknown>[] = [];
     const dependencies = createSmsDependencies(db, sentMessages);
-    const response = await handleTwilioInbound(
+    const response = await handleSms8Inbound(
       await signedInboundRequest("SM_TEST_1", 'py print("hi")'),
       env,
       collectWaitUntil(pending),
@@ -68,7 +67,7 @@ describe("handleTwilioInbound", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("Running code...");
+    expect(await response.text()).toBe("OK");
     await Promise.all(pending);
     expect(db.jobs).toHaveLength(1);
     expect(db.jobs[0]?.language).toBe("python");
@@ -76,21 +75,21 @@ describe("handleTwilioInbound", () => {
     expect(sentMessages).toEqual(["Output:\nhi"]);
   });
 
-  it("treats duplicate MessageSid retries as idempotent", async () => {
+  it("treats duplicate SMS8 message IDs as idempotent", async () => {
     const db = createInMemoryDb();
     const sentMessages: string[] = [];
     const dependencies = createSmsDependencies(db, sentMessages);
     const firstPending: Promise<unknown>[] = [];
     const secondPending: Promise<unknown>[] = [];
 
-    await handleTwilioInbound(
+    await handleSms8Inbound(
       await signedInboundRequest("SM_DUPLICATE", "py print(1)"),
       env,
       collectWaitUntil(firstPending),
       dependencies,
     );
     await Promise.all(firstPending);
-    const duplicateResponse = await handleTwilioInbound(
+    const duplicateResponse = await handleSms8Inbound(
       await signedInboundRequest("SM_DUPLICATE", "py print(1)"),
       env,
       collectWaitUntil(secondPending),
@@ -98,9 +97,7 @@ describe("handleTwilioInbound", () => {
     );
 
     expect(duplicateResponse.status).toBe(200);
-    expect(await duplicateResponse.text()).toBe(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-    );
+    expect(await duplicateResponse.text()).toBe("OK");
     expect(secondPending).toHaveLength(0);
     expect(db.jobs).toHaveLength(1);
     expect(sentMessages).toHaveLength(1);
@@ -110,8 +107,16 @@ describe("handleTwilioInbound", () => {
     const db = createInMemoryDb();
     const pending: Promise<unknown>[] = [];
     dbClientMock.productionDb = db;
+    await db.insertInboundSms({
+      direction: "inbound",
+      providerMessageSid: "SM_PRODUCTION_DB",
+      phoneE164: "+15555550123",
+      body: "help",
+      status: "received",
+      rawPayload: {},
+    });
 
-    const response = await handleTwilioInbound(
+    const response = await handleSms8Inbound(
       await signedInboundRequest("SM_PRODUCTION_DB", "help"),
       {
         ...env,
@@ -122,12 +127,13 @@ describe("handleTwilioInbound", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("Commands:");
+    expect(await response.text()).toBe("OK");
+    await Promise.all(pending);
     expect(dbClientMock.createPostgresDb).toHaveBeenCalledWith({
       connectionString: "postgres://hyperdrive",
     });
-    expect(db.messages).toHaveLength(1);
     expect(pending).toHaveLength(0);
+    expect(db.messages).toHaveLength(1);
   });
 
   it("refuses execution for non-allowlisted pilot phone numbers without creating a job", async () => {
@@ -135,7 +141,7 @@ describe("handleTwilioInbound", () => {
     const pending: Promise<unknown>[] = [];
     const sentMessages: string[] = [];
 
-    const response = await handleTwilioInbound(
+    const response = await handleSms8Inbound(
       await signedInboundRequest("SM_NOT_ALLOWED", 'py print("hi")'),
       {
         ...env,
@@ -147,10 +153,10 @@ describe("handleTwilioInbound", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("not enabled");
+    expect(await response.text()).toBe("OK");
+    await Promise.all(pending);
     expect(db.jobs).toHaveLength(0);
-    expect(sentMessages).toHaveLength(0);
-    expect(pending).toHaveLength(0);
+    expect(sentMessages).toEqual(["This phone number is not enabled for the SMS pilot."]);
   });
 });
 
@@ -182,7 +188,7 @@ describe("runExecutionJob", () => {
  * Creates injectable SMS dependencies used by inbound webhook tests.
  * @param db - In-memory DB boundary for persistence assertions.
  * @param sentMessages - Mutable collection of outbound SMS bodies.
- * @returns Dependencies that avoid real Twilio and sandbox calls.
+ * @returns Dependencies that avoid real SMS8 and sandbox calls.
  */
 function createSmsDependencies(db: InMemoryDb, sentMessages: string[]): SmsDependencies {
   return {
@@ -212,60 +218,61 @@ function collectWaitUntil(pending: Promise<unknown>[]): WaitUntil {
 }
 
 /**
- * Builds a signed Twilio webhook request.
- * @param messageSid - Provider message identifier used for idempotency.
- * @param body - Inbound SMS body delivered by Twilio.
- * @returns Request with a valid mocked Twilio signature.
+ * Builds a signed SMS8 webhook request.
+ * @param messageId - Provider message identifier used for idempotency.
+ * @param body - Inbound SMS body delivered by SMS8.
+ * @returns Request with a valid mocked SMS8 signature.
  */
-async function signedInboundRequest(messageSid: string, body: string): Promise<Request> {
-  const url = "http://localhost/api/twilio/inbound";
-  const form = new URLSearchParams({
-    From: "+15555550123",
-    To: "+15555550999",
-    Body: body,
-    MessageSid: messageSid,
-  });
-  const signature = await computeTwilioSignature(url, form, env.TWILIO_AUTH_TOKEN);
+async function signedInboundRequest(messageId: string, body: string): Promise<Request> {
+  const url = "http://localhost/api/sms8/inbound";
+  const messages = JSON.stringify([
+    {
+      ID: messageId,
+      number: "+15555550123",
+      message: body,
+      deviceID: "182",
+      simSlot: "0",
+      userID: "1",
+      status: "Received",
+      sentDate: "2026-04-25T12:00:00+00:00",
+      deliveredDate: "2026-04-25T12:00:01+00:00",
+      groupID: null,
+    },
+  ]);
+  const form = new URLSearchParams({ messages });
+  const signature = await computeSms8Signature(messages, env.SMS8_API_KEY);
 
   return new Request(url, {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
-      "x-twilio-signature": signature,
+      "x-sg-signature": signature,
     },
     body: form,
   });
 }
 
 /**
- * Computes Twilio's form webhook HMAC for mocked integration requests.
- * @param url - Public webhook URL used by signature validation.
- * @param form - Form fields delivered in the webhook request.
- * @param authToken - Test auth token shared with the handler environment.
- * @returns Base64 HMAC-SHA1 signature.
+ * Computes SMS8's messages-field HMAC for mocked integration requests.
+ * @param messagesJson - Raw JSON text from the `messages` form field.
+ * @param apiKey - Test API key shared with the handler environment.
+ * @returns Base64 HMAC-SHA256 signature.
  */
-async function computeTwilioSignature(
-  url: string,
-  form: URLSearchParams,
-  authToken: string,
-): Promise<string> {
-  const baseString = [...form.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .reduce((accumulator, [key, value]) => `${accumulator}${key}${value}`, url);
+async function computeSms8Signature(messagesJson: string, apiKey: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(authToken),
-    { name: "HMAC", hash: "SHA-1" },
+    new TextEncoder().encode(apiKey),
+    { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(baseString));
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(messagesJson));
 
   return bytesToBase64(new Uint8Array(digest));
 }
 
 /**
- * Encodes binary HMAC output as base64 for Twilio headers.
+ * Encodes binary HMAC output as base64 for SMS8 headers.
  * @param bytes - Raw Web Crypto digest bytes.
  * @returns Base64-encoded signature text.
  */

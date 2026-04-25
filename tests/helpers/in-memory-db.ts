@@ -3,13 +3,7 @@
  * @description In-memory implementation of the feature DB contract for tests.
  * @module tests
  */
-import type {
-  CreateExecutionJobInput,
-  Db,
-  InsertSmsMessage,
-  UpdateSmsStatusInput,
-  UpsertSmsQuotaInput,
-} from "../../src/features/db/client";
+import type { Db, InsertSmsMessage } from "../../src/features/db/client";
 import type {
   ExecutionJob,
   ReplSession,
@@ -18,7 +12,7 @@ import type {
   SmsMessage,
   SmsQuota,
 } from "../../src/features/db/db.types";
-import type { ExecutionResult, ExecutionStatus, ReplLanguage } from "../../src/features/repl/repl.types";
+import type { ExecutionResult, ReplLanguage } from "../../src/features/repl/repl.types";
 
 /**
  * Mutable test database plus row collections for assertions.
@@ -93,7 +87,9 @@ export function createInMemoryDb(): InMemoryDb {
     },
 
     async updateSmsStatus(input) {
-      const message = messages.find((candidate) => candidate.providerMessageSid === input.providerMessageSid);
+      const message = messages.find(
+        (candidate) => candidate.providerMessageSid === input.providerMessageSid,
+      );
 
       if (!message) {
         throw new Error(`SMS message ${input.providerMessageSid} does not exist`);
@@ -151,8 +147,9 @@ export function createInMemoryDb(): InMemoryDb {
 
     async getActiveSession(identityId) {
       return (
-        sessions.find((session) => session.smsIdentityId === identityId && session.status === "active") ??
-        null
+        sessions.find(
+          (session) => session.smsIdentityId === identityId && session.status === "active",
+        ) ?? null
       );
     },
 
@@ -180,7 +177,8 @@ export function createInMemoryDb(): InMemoryDb {
         .map((identity) => identity.id);
 
       return jobs.filter(
-        (job) => job.smsIdentityId && identityIds.includes(job.smsIdentityId) && job.createdAt >= since,
+        (job) =>
+          job.smsIdentityId && identityIds.includes(job.smsIdentityId) && job.createdAt >= since,
       ).length;
     },
 
@@ -220,17 +218,19 @@ export function createInMemoryDb(): InMemoryDb {
     },
 
     async listSmsIdentityUsage(limit) {
-      return identities.slice(0, limit).map((identity): SmsIdentityUsage => ({
-        id: identity.id,
-        phoneE164: identity.phoneE164,
-        defaultLanguage: identity.defaultLanguage,
-        executionCount: jobs.filter((job) => job.smsIdentityId === identity.id).length,
-        hourlyLimit: 20,
-        dailyLimit: 100,
-        disabled: false,
-        quotaReason: null,
-        lastActiveAt: null,
-      }));
+      return identities.slice(0, limit).map(
+        (identity): SmsIdentityUsage => ({
+          id: identity.id,
+          phoneE164: identity.phoneE164,
+          defaultLanguage: identity.defaultLanguage,
+          executionCount: jobs.filter((job) => job.smsIdentityId === identity.id).length,
+          hourlyLimit: 20,
+          dailyLimit: 100,
+          disabled: false,
+          quotaReason: null,
+          lastActiveAt: null,
+        }),
+      );
     },
   };
 
@@ -241,7 +241,9 @@ export function createInMemoryDb(): InMemoryDb {
    */
   function insertMessage(input: InsertSmsMessage): SmsMessage {
     if (input.providerMessageSid) {
-      const existing = messages.find((message) => message.providerMessageSid === input.providerMessageSid);
+      const existing = messages.find(
+        (message) => message.providerMessageSid === input.providerMessageSid,
+      );
 
       if (existing) {
         return existing;
@@ -251,7 +253,7 @@ export function createInMemoryDb(): InMemoryDb {
     const message: SmsMessage = {
       id: `sms_${++messageSequence}`,
       direction: input.direction,
-      provider: "twilio",
+      provider: "sms8",
       providerMessageSid: input.providerMessageSid,
       phoneE164: input.phoneE164,
       body: input.body,

@@ -64,7 +64,7 @@ CREATE TABLE "sms_identities" (
 CREATE TABLE "sms_messages" (
 	"id" text PRIMARY KEY NOT NULL,
 	"direction" text NOT NULL,
-	"provider" text DEFAULT 'twilio' NOT NULL,
+	"provider" text DEFAULT 'sms8' NOT NULL,
 	"provider_message_sid" text,
 	"phone_e164" text NOT NULL,
 	"body" text,

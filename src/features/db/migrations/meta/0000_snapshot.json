@@ -515,7 +515,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'twilio'"
+          "default": "'sms8'"
         },
         "provider_message_sid": {
           "name": "provider_message_sid",

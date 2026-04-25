@@ -13,7 +13,7 @@ import type { RateLimitDecision } from "./security.types";
  * @param phoneE164 - Sender phone number already normalized to E.164.
  * @param now - Clock value supplied by tests or the current Worker request.
  * @returns Allow or deny decision with SMS-safe copy.
- * @remarks Counting persisted jobs makes Twilio retries and future admin tools
+ * @remarks Counting persisted jobs makes provider retries and future admin tools
  * share the same source of truth before any hot-path KV optimization exists.
  */
 export async function checkSmsExecutionRateLimit(

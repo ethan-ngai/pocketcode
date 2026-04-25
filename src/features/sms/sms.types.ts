@@ -1,13 +1,13 @@
 /**
  * @file sms.types.ts
- * @description Shared SMS contracts for Twilio ingress, egress, and parsing.
+ * @description Shared SMS contracts for provider ingress, egress, and parsing.
  * @module sms
  */
 import type { SmsCommand } from "../repl/repl.types";
 
 /**
  * Maximum executable source accepted after removing an SMS command prefix.
- * @remarks Twilio may deliver longer bodies, but this limit keeps the first MVP
+ * @remarks Providers may deliver longer bodies, but this limit keeps the first MVP
  * aligned with the sandbox timeout and abuse-control assumptions.
  */
 export const SMS_MAX_SOURCE_CHARS = 2_000;
@@ -27,14 +27,14 @@ export type SmsDirection = "inbound" | "outbound";
 
 /**
  * Provider names currently understood by the SMS feature boundary.
- * @remarks Keeping this narrow lets non-Twilio support be added deliberately.
+ * @remarks Keeping this narrow makes provider changes explicit in persistence.
  */
-export type SmsProvider = "twilio";
+export type SmsProvider = "sms8";
 
 /**
  * Normalized inbound message used before provider payload persistence.
  * @remarks The raw payload is retained so signature and delivery edge cases can
- * be debugged without coupling every caller to Twilio's field names.
+ * be debugged without coupling every caller to provider field names.
  */
 export interface InboundSmsMessage {
   /** Provider message identifier used for idempotency when available. */
@@ -63,8 +63,8 @@ export interface ParsedInboundSms {
 
 /**
  * Outbound SMS request handed to the provider client.
- * @remarks The provider layer decides whether to use a messaging service or a
- * concrete sender number based on environment configuration.
+ * @remarks The provider layer decides how to route the send based on environment
+ * configuration, keeping execution code independent of SMS8 device details.
  */
 export interface OutboundSmsRequest {
   /** E.164 destination phone number. */

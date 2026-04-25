@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { createTwiMlResponse, formatExecutionSmsMessages, formatSmsOutput } from "./responder";
+import { createSmsWebhookResponse, formatExecutionSmsMessages, formatSmsOutput } from "./responder";
 import { SMS_OUTPUT_CHUNK_CHARS } from "./sms.types";
 
 describe("formatSmsOutput", () => {
@@ -53,10 +53,8 @@ describe("formatExecutionSmsMessages", () => {
   });
 });
 
-describe("createTwiMlResponse", () => {
-  it("escapes XML-sensitive result text", () => {
-    expect(createTwiMlResponse("<ok>&\"'")).toContain(
-      "&lt;ok&gt;&amp;&quot;&apos;",
-    );
+describe("createSmsWebhookResponse", () => {
+  it("returns a plain acknowledgement by default", () => {
+    expect(createSmsWebhookResponse()).toBe("OK");
   });
 });

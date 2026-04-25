@@ -21,9 +21,7 @@ const request: ExecutionRequest = {
 describe("toJavaProgram", () => {
   it("wraps snippets in a Main class", () => {
     expect(toJavaProgram('System.out.println("hi");')).toContain("public class Main");
-    expect(toJavaProgram('System.out.println("hi");')).toContain(
-      '    System.out.println("hi");',
-    );
+    expect(toJavaProgram('System.out.println("hi");')).toContain('    System.out.println("hi");');
   });
 
   it("preserves full Main class submissions", () => {
@@ -38,6 +36,7 @@ describe("runJavaCommand", () => {
     const calls: string[] = [];
     const sandbox: SandboxRuntime = {
       mkdir: async () => undefined,
+      runCode: async () => ({ logs: { stdout: [], stderr: [] }, results: [] }),
       writeFile: async (path, content) => {
         calls.push(`${path}:${content.includes("public class Main")}`);
       },
@@ -55,20 +54,23 @@ describe("runJavaCommand", () => {
     });
     expect(calls).toEqual([
       "/workspace/jobs/job_test/Main.java:true",
-      "javac Main.java && java Main:/workspace/jobs/job_test:8000",
+      "ecj Main.java && java Main:/workspace/jobs/job_test:8000",
     ]);
   });
 
   it("normalizes timeout exceptions with the Java timeout budget", async () => {
     const sandbox: SandboxRuntime = {
       mkdir: async () => undefined,
+      runCode: async () => ({ logs: { stdout: [], stderr: [] }, results: [] }),
       writeFile: async () => undefined,
       exec: async () => {
         throw new Error("Command timed out");
       },
     };
 
-    await expect(runJavaCommand(sandbox, request, "/workspace/jobs/job_test")).resolves.toMatchObject({
+    await expect(
+      runJavaCommand(sandbox, request, "/workspace/jobs/job_test"),
+    ).resolves.toMatchObject({
       stdout: "",
       stderr: "Timed out after 8s.",
       exitCode: null,

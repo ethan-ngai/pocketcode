@@ -37,18 +37,16 @@ export interface Env {
   GITHUB_CLIENT_ID?: string;
   /** GitHub OAuth client secret, kept server-side for OAuth callbacks. */
   GITHUB_CLIENT_SECRET?: string;
-  /** Twilio account identifier used by REST API and webhook validation. */
-  TWILIO_ACCOUNT_SID: string;
-  /** Twilio auth token, kept server-side for REST API and signatures. */
-  TWILIO_AUTH_TOKEN: string;
-  /** Preferred Twilio sender abstraction for outbound SMS. */
-  TWILIO_MESSAGING_SERVICE_SID?: string;
-  /** Concrete Twilio sender number used when no messaging service is configured. */
-  TWILIO_FROM_NUMBER?: string;
+  /** SMS8 account API key used for send requests and webhook signatures. */
+  SMS8_API_KEY: string;
+  /** JSON-encoded SMS8 device and SIM slot targets, e.g. ["182|0"]. */
+  SMS8_DEVICES: string;
+  /** Whether SMS8 should prioritize a device when several send targets exist. */
+  SMS8_PRIORITIZE?: string;
   /** Comma-separated E.164 phone numbers allowed to execute SMS jobs. */
   SMS_ALLOWLIST?: string;
-  /** Enables Twilio request signature validation for ingress routes. */
-  TWILIO_WEBHOOK_AUTH_ENABLED?: string;
+  /** Enables SMS8 request signature validation for ingress routes. */
+  SMS8_WEBHOOK_AUTH_ENABLED?: string;
   /** Deployment environment name used for local-only safety bypasses. */
   ENVIRONMENT?: string;
   /** Public app origin used for callbacks and admin links. */
@@ -79,18 +77,16 @@ export interface AppConfig {
   githubClientId: string | null;
   /** GitHub OAuth client secret when project-team login is enabled. */
   githubClientSecret: string | null;
-  /** Twilio account SID. */
-  twilioAccountSid: string;
-  /** Twilio auth token. */
-  twilioAuthToken: string;
-  /** Twilio messaging service SID when configured. */
-  twilioMessagingServiceSid: string | null;
-  /** Twilio sender number when configured. */
-  twilioFromNumber: string | null;
+  /** SMS8 API key. */
+  sms8ApiKey: string;
+  /** SMS8 device and SIM slot targets accepted by the send API. */
+  sms8Devices: readonly string[];
+  /** Whether SMS8 should prioritize the selected send device. */
+  sms8Prioritize: boolean;
   /** Phone numbers allowed to execute code during the invite-only pilot. */
   smsAllowlist: ReadonlySet<string>;
   /** Whether inbound webhook signature checks are enforced. */
-  twilioWebhookAuthEnabled: boolean;
+  sms8WebhookAuthEnabled: boolean;
   /** Public application base URL. */
   appBaseUrl: string;
   /** Sandbox timeout in milliseconds. */
@@ -101,7 +97,7 @@ export interface AppConfig {
 
 /**
  * Runtime configuration needed only by Better Auth and admin identity checks.
- * @remarks Auth routes should not fail just because Twilio or sandbox bindings
+ * @remarks Auth routes should not fail just because SMS provider or sandbox bindings
  * are absent in a local web/admin development session.
  */
 export interface AuthConfig {
@@ -135,21 +131,14 @@ const DEFAULT_EXECUTION_MAX_OUTPUT_CHARS = 4_000;
  */
 export function getAppConfig(env: Env): AppConfig {
   const authConfig = getAuthConfig(env);
-  const twilioMessagingServiceSid = emptyToNull(env.TWILIO_MESSAGING_SERVICE_SID);
-  const twilioFromNumber = emptyToNull(env.TWILIO_FROM_NUMBER);
-
-  if (!twilioMessagingServiceSid && !twilioFromNumber) {
-    throw new Error("TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER is required");
-  }
 
   return {
     ...authConfig,
-    twilioAccountSid: requireBinding(env.TWILIO_ACCOUNT_SID, "TWILIO_ACCOUNT_SID"),
-    twilioAuthToken: requireBinding(env.TWILIO_AUTH_TOKEN, "TWILIO_AUTH_TOKEN"),
-    twilioMessagingServiceSid,
-    twilioFromNumber,
+    sms8ApiKey: requireBinding(env.SMS8_API_KEY, "SMS8_API_KEY"),
+    sms8Devices: parseSms8Devices(env.SMS8_DEVICES),
+    sms8Prioritize: parseBoolean(env.SMS8_PRIORITIZE, false),
     smsAllowlist: parsePhoneSet(env.SMS_ALLOWLIST),
-    twilioWebhookAuthEnabled: parseBoolean(env.TWILIO_WEBHOOK_AUTH_ENABLED, true),
+    sms8WebhookAuthEnabled: parseBoolean(env.SMS8_WEBHOOK_AUTH_ENABLED, true),
     appBaseUrl: requireBinding(env.APP_BASE_URL, "APP_BASE_URL"),
     executionTimeoutMs: parsePositiveInteger(
       env.EXECUTION_TIMEOUT_MS,
@@ -251,12 +240,40 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
  * Converts empty strings to null for optional sender configuration.
  * @param value - Optional binding value.
  * @returns Trimmed value or null when unset.
- * @remarks Null is easier for provider selection code to pattern-match than a
+ * @remarks Null is easier for optional auth settings to pattern-match than a
  * mix of undefined and blank strings.
  */
 function emptyToNull(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+/**
+ * Parses SMS8 device routing configuration.
+ * @param value - JSON-encoded array supplied by Worker secrets or dev vars.
+ * @returns Non-empty list of `deviceID|simSlot` targets for SMS8 sends.
+ * @remarks SMS8 rejects outbound sends without a concrete Android device route,
+ * so startup validation fails before execution results are silently dropped.
+ */
+function parseSms8Devices(value: string | undefined): readonly string[] {
+  const raw = requireBinding(value, "SMS8_DEVICES");
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("SMS8_DEVICES must be a JSON array of device routes");
+  }
+
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length === 0 ||
+    parsed.some((entry) => typeof entry !== "string" || !entry.trim())
+  ) {
+    throw new Error("SMS8_DEVICES must be a non-empty JSON array of device routes");
+  }
+
+  return parsed.map((entry) => entry.trim());
 }
 
 /**

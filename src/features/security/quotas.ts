@@ -14,7 +14,7 @@ export const DEFAULT_EXECUTION_TIMEOUT_MS = 5_000;
 /**
  * Java timeout in milliseconds for the SMS MVP.
  * @remarks Compilation can make Java slower than Python, but the cap stays hard
- * so Twilio users get predictable feedback and cost exposure stays bounded.
+ * so SMS users get predictable feedback and cost exposure stays bounded.
  */
 export const DEFAULT_JAVA_EXECUTION_TIMEOUT_MS = 8_000;
 
@@ -28,7 +28,7 @@ export const DEFAULT_SMS_EXECUTIONS_PER_HOUR = 20;
 /**
  * Maximum execution commands accepted from one phone number per day.
  * @remarks Daily limits prevent a quiet but sustained SMS loop from creating
- * unbounded Twilio and sandbox usage.
+ * unbounded SMS provider and sandbox usage.
  */
 export const DEFAULT_SMS_EXECUTIONS_PER_DAY = 100;
 

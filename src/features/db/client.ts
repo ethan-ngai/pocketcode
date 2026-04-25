@@ -35,7 +35,7 @@ type DatabaseClient = PostgresJsDatabase<typeof schema>;
 export interface InsertSmsMessage {
   /** Inbound or outbound message direction. */
   direction: "inbound" | "outbound";
-  /** Provider message SID for idempotency when available. */
+  /** Provider message id for idempotency when available. */
   providerMessageSid: string | null;
   /** Phone number associated with the message. */
   phoneE164: string;
@@ -53,7 +53,7 @@ export interface InsertSmsMessage {
  * persistence, so provider SID remains the stable correlation key.
  */
 export interface UpdateSmsStatusInput {
-  /** Provider message SID reported by Twilio callbacks. */
+  /** Provider message id reported by delivery callbacks. */
   providerMessageSid: string;
   /** Delivery lifecycle value reported by the provider. */
   status: string;
@@ -113,8 +113,8 @@ export interface Db {
   findOrCreateSmsIdentity(phoneE164: string): Promise<SmsIdentity>;
 
   /**
-   * Looks up a provider message by SID for idempotent webhook handling.
-   * @param providerMessageSid - Twilio `MessageSid` or outbound `MessageStatus` callback SID.
+   * Looks up a provider message by id for idempotent webhook handling.
+   * @param providerMessageSid - Provider message id reported by inbound or outbound APIs.
    * @returns Stored message row when this provider event has already been seen.
    */
   findSmsMessageByProviderSid(providerMessageSid: string): Promise<SmsMessage | null>;

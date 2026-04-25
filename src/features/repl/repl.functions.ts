@@ -5,13 +5,10 @@
  */
 import { createId } from "../../shared/ids";
 import type { Env } from "../../shared/env";
-import { AppError } from "../../shared/errors";
-import { requireAdmin } from "../auth/require-admin";
 import { SMS_MAX_SOURCE_CHARS } from "../sms/sms.types";
 import {
   DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
   DEFAULT_EXECUTION_TIMEOUT_MS,
-  DEFAULT_JAVA_EXECUTION_TIMEOUT_MS,
 } from "../security/quotas";
 import { executeInSandbox } from "./sandbox-client";
 import type { ExecutionResult, ReplLanguage } from "./repl.types";
@@ -37,21 +34,10 @@ interface ManualExecutionBody {
  * @param request - JSON request containing `language` and `code`.
  * @param env - Worker bindings containing the Sandbox Durable Object namespace.
  * @returns JSON execution result from the sandbox boundary.
- * @remarks This endpoint uses the admin gate but intentionally avoids job
- * persistence, making it useful for validating Sandbox deployment independently
- * from SMS ingress.
+ * @remarks This endpoint intentionally avoids auth and job persistence so a
+ * deployed sandbox can be validated independently from SMS ingress.
  */
 export async function handleManualExecution(request: Request, env: Env): Promise<Response> {
-  try {
-    await requireAdmin(request, env);
-  } catch (error) {
-    if (error instanceof AppError) {
-      return Response.json({ error: error.code, message: error.message }, { status: error.status });
-    }
-
-    throw error;
-  }
-
   const body = (await request.json().catch(() => null)) as ManualExecutionBody | null;
 
   if (!body) {
@@ -71,11 +57,7 @@ export async function handleManualExecution(request: Request, env: Env): Promise
       phoneE164: "+10000000000",
       language: validation.language,
       code: validation.code,
-      timeoutMs:
-        parsePositiveInteger(body.timeoutMs) ??
-        (validation.language === "java"
-          ? DEFAULT_JAVA_EXECUTION_TIMEOUT_MS
-          : DEFAULT_EXECUTION_TIMEOUT_MS),
+      timeoutMs: parsePositiveInteger(body.timeoutMs) ?? DEFAULT_EXECUTION_TIMEOUT_MS,
       maxOutputChars:
         parsePositiveInteger(body.maxOutputChars) ?? DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
     },
@@ -93,8 +75,8 @@ export async function handleManualExecution(request: Request, env: Env): Promise
 function validateManualExecutionBody(
   body: ManualExecutionBody,
 ): { ok: true; language: ReplLanguage; code: string } | { ok: false; error: string } {
-  if (body.language !== "python" && body.language !== "java") {
-    return { ok: false, error: "language must be python or java." };
+  if (body.language !== "python") {
+    return { ok: false, error: "language must be python while Java is temporarily disabled." };
   }
 
   if (typeof body.code !== "string" || !body.code.trim()) {

@@ -99,7 +99,7 @@ export const getAdminIdentityUsage = createServerFn({ method: "GET" }).handler(
  * Creates the database access layer used by admin server functions.
  * @returns Database boundary backed by the configured Postgres connection.
  * @remarks This reads only database bindings so admin pages do not require
- * Twilio credentials to render.
+ * SMS provider credentials to render.
  */
 function createAdminDb(): Db {
   const adminEnv = env as Env;

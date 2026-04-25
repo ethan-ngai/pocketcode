@@ -1,6 +1,6 @@
 /**
  * @file responder.ts
- * @description SMS response formatting helpers shared by Twilio and execution flows.
+ * @description SMS response formatting helpers shared by provider and execution flows.
  * @module sms
  */
 import { SMS_OUTPUT_CHUNK_CHARS } from "./sms.types";
@@ -10,7 +10,7 @@ import type { ExecutionResult } from "../repl/repl.types";
 const SMS_OUTPUT_MAX_CHUNKS = 2;
 
 /** Help text intentionally stays terse for low-bandwidth SMS users. */
-export const SMS_HELP_TEXT = "Commands:\npy <code>\njava <code>\nlang py\nlang java\nreset";
+export const SMS_HELP_TEXT = "Commands:\npy <code>\nlang py\nreset";
 
 const ANSI_ESCAPE_PATTERN =
   // eslint-disable-next-line no-control-regex
@@ -22,7 +22,7 @@ const ANSI_ESCAPE_PATTERN =
  * @param prefix - User-visible prefix that should appear only on the first chunk.
  * @returns One or two chunks under the configured SMS size budget.
  * @remarks The full execution output is stored before formatting; this helper
- * only enforces the limited SMS preview policy from the Twilio MVP.
+ * only enforces the limited SMS preview policy from the provider MVP.
  */
 export function formatSmsOutput(output: string, prefix = ""): string[] {
   const source = sanitizeSmsText(output) || "(no output)";
@@ -51,7 +51,7 @@ export function formatSmsOutput(output: string, prefix = ""): string[] {
 /**
  * Formats a sandbox result for outbound SMS delivery.
  * @param result - Terminal execution result already persisted by the job layer.
- * @returns SMS chunks ready to send through Twilio.
+ * @returns SMS chunks ready to send through the configured provider.
  * @remarks The prefix rules intentionally trade detail for quick comprehension
  * on small phone screens while admin views retain the full stdout/stderr split.
  */
@@ -97,34 +97,12 @@ export function sanitizeSmsText(value: string): string {
 }
 
 /**
- * Builds a minimal TwiML response body.
- * @param message - Optional message to include in the immediate webhook reply.
- * @returns XML TwiML response accepted by Twilio.
- * @remarks Twilio requires a fast webhook response, so long-running execution
- * results should be sent later through the REST API rather than blocking here.
+ * Builds a concise immediate webhook response body.
+ * @param message - Optional message to expose to webhook callers or tests.
+ * @returns Plain text response accepted by SMS8 webhooks.
+ * @remarks SMS8 replies are sent through the API rather than webhook XML, so the
+ * HTTP response only acknowledges receipt and keeps webhook retries predictable.
  */
-export function createTwiMlResponse(message?: string): string {
-  if (!message) {
-    return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';
-  }
-
-  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(
-    message,
-  )}</Message></Response>`;
-}
-
-/**
- * Escapes XML entities in user-visible SMS text.
- * @param value - Text that will be embedded in a TwiML XML document.
- * @returns XML-safe text.
- * @remarks Twilio webhook responses are XML, so output must not let code results
- * accidentally break the response document.
- */
-function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+export function createSmsWebhookResponse(message = "OK"): string {
+  return message;
 }

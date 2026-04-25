@@ -1,68 +1,56 @@
 /**
  * @file signatures.ts
- * @description Twilio signature validation boundary.
+ * @description SMS8 signature validation boundary.
  * @module sms
  */
 import type { Env } from "../../shared/env";
 
 /**
- * Validates Twilio's HMAC-SHA1 request signature.
- * @param request - Original webhook request carrying path, query, and signature header.
- * @param env - Worker bindings containing the Twilio auth token and validation toggle.
- * @param parsedBody - Form body parsed before business logic trusts provider fields.
+ * Validates SMS8's HMAC-SHA256 request signature.
+ * @param request - Original webhook request carrying SMS8's signature header.
+ * @param env - Worker bindings containing the SMS8 API key and validation toggle.
+ * @param messagesJson - Raw `messages` form value that SMS8 signed.
  * @returns True when the signature is valid or a local development bypass is explicitly enabled.
  * @remarks The bypass is intentionally constrained to local/dev contexts because
  * webhook handlers must fail closed once exposed to the public internet.
  */
-export async function validateTwilioRequest(
+export async function validateSms8Request(
   request: Request,
   env: Env,
-  parsedBody: URLSearchParams,
+  messagesJson: string,
 ): Promise<boolean> {
   if (isWebhookAuthBypassed(request, env)) {
     return true;
   }
 
-  const signature = request.headers.get("x-twilio-signature");
+  const signature =
+    request.headers.get("x-sg-signature") ?? request.headers.get("http_x_sg_signature");
 
-  if (!signature || !env.TWILIO_AUTH_TOKEN?.trim()) {
+  if (!signature || !env.SMS8_API_KEY?.trim()) {
     return false;
   }
 
-  const expected = await computeTwilioSignature(
-    getPublicValidationUrl(request, env),
-    parsedBody,
-    env.TWILIO_AUTH_TOKEN,
-  );
+  const expected = await computeSms8Signature(messagesJson, env.SMS8_API_KEY);
   return timingSafeEqual(signature, expected);
 }
 
 /**
- * Computes the expected Twilio request signature.
- * @param url - Absolute URL Twilio requested, including query string.
- * @param parsedBody - Form parameters included in the webhook POST.
- * @param authToken - Account auth token shared with Twilio.
- * @returns Base64-encoded HMAC digest expected in `X-Twilio-Signature`.
- * @remarks Twilio's legacy webhook signature format sorts all POST parameter
- * names lexicographically and appends each name/value pair to the URL before HMAC.
+ * Computes the expected SMS8 request signature.
+ * @param messagesJson - Raw JSON text from the signed `messages` form field.
+ * @param apiKey - SMS8 API key shared with the webhook sender.
+ * @returns Base64-encoded HMAC digest expected in `HTTP_X_SG_SIGNATURE`.
+ * @remarks SMS8 signs only the raw `messages` payload, so form reserialization
+ * must not occur before validation.
  */
-async function computeTwilioSignature(
-  url: string,
-  parsedBody: URLSearchParams,
-  authToken: string,
-): Promise<string> {
-  const baseString = [...parsedBody.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .reduce((accumulator, [key, value]) => `${accumulator}${key}${value}`, url);
-
+async function computeSms8Signature(messagesJson: string, apiKey: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(authToken),
-    { name: "HMAC", hash: "SHA-1" },
+    new TextEncoder().encode(apiKey),
+    { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(baseString));
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(messagesJson));
 
   return bytesToBase64(new Uint8Array(digest));
 }
@@ -76,7 +64,7 @@ async function computeTwilioSignature(
  * accidental production escape hatch through configuration alone.
  */
 function isWebhookAuthBypassed(request: Request, env: Env): boolean {
-  if (env.TWILIO_WEBHOOK_AUTH_ENABLED?.trim().toLowerCase() !== "false") {
+  if (env.SMS8_WEBHOOK_AUTH_ENABLED?.trim().toLowerCase() !== "false") {
     return false;
   }
 
@@ -95,27 +83,8 @@ function isWebhookAuthBypassed(request: Request, env: Env): boolean {
 }
 
 /**
- * Resolves the public URL Twilio used for signature generation.
- * @param request - Worker request whose path and query are preserved.
- * @param env - Worker bindings containing the configured public app origin.
- * @returns Absolute URL used as the signature base.
- * @remarks Workers may see internal preview hosts, so production validation
- * anchors on `APP_BASE_URL` while preserving Twilio's requested path and query.
- */
-function getPublicValidationUrl(request: Request, env: Env): string {
-  const publicBaseUrl = env.APP_BASE_URL?.trim();
-
-  if (!publicBaseUrl) {
-    return request.url;
-  }
-
-  const requestedUrl = new URL(request.url);
-  return new URL(`${requestedUrl.pathname}${requestedUrl.search}`, publicBaseUrl).toString();
-}
-
-/**
  * Compares signatures without early length or byte mismatch exits.
- * @param left - Signature supplied by Twilio.
+ * @param left - Signature supplied by SMS8.
  * @param right - Locally computed expected signature.
  * @returns True when both signatures are equal.
  * @remarks Web Crypto does not provide a timing-safe compare helper in Workers,
@@ -135,9 +104,9 @@ function timingSafeEqual(left: string, right: string): boolean {
 }
 
 /**
- * Encodes binary data for HTTP Basic and Twilio HMAC values.
+ * Encodes binary data for SMS8 HMAC values.
  * @param bytes - Raw bytes produced by Web Crypto.
- * @returns Base64 text compatible with Twilio headers.
+ * @returns Base64 text compatible with SMS8 headers.
  */
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
