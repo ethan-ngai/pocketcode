@@ -67,7 +67,7 @@ Export:
 export async function validateTwilioRequest(
   request: Request,
   env: Env,
-  parsedBody: URLSearchParams
+  parsedBody: URLSearchParams,
 ): Promise<boolean>;
 ```
 

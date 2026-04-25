@@ -40,11 +40,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  plugins: [
-    cloudflare({ viteEnvironment: { name: "ssr" } }),
-    tanstackStart(),
-    react(),
-  ],
+  plugins: [cloudflare({ viteEnvironment: { name: "ssr" } }), tanstackStart(), react()],
 });
 ```
 
@@ -57,11 +53,11 @@ export default defineConfig({
   "compatibility_date": "2026-04-25",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
-    "directory": ".output/public"
+    "directory": ".output/public",
   },
   "observability": {
-    "enabled": true
-  }
+    "enabled": true,
+  },
 }
 ```
 

@@ -64,7 +64,7 @@ Export:
 ```ts
 export async function executeInSandbox(
   request: ExecutionRequest,
-  env: Env
+  env: Env,
 ): Promise<ExecutionResult>;
 ```
 
@@ -86,7 +86,7 @@ export async function executeInSandbox(request, env) {
       stderr: clamp(result.stderr, request.maxOutputChars),
       exitCode: result.exitCode,
       durationMs: Date.now() - started,
-      sandboxId: request.id
+      sandboxId: request.id,
     };
   } catch (error) {
     return {
@@ -96,7 +96,7 @@ export async function executeInSandbox(request, env) {
       exitCode: null,
       durationMs: Date.now() - started,
       sandboxId: request.id,
-      errorCode: "SANDBOX_EXECUTION_ERROR"
+      errorCode: "SANDBOX_EXECUTION_ERROR",
     };
   }
 }

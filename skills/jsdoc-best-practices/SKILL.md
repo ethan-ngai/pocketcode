@@ -1,7 +1,7 @@
 ﻿---
 name: jsdoc-best-practices
 description: Enforces JSDoc/TSDoc documentation standards for TypeScript project.
-    Use when writing or reviewing TypeScript code to ensure proper documentation with file preambles, function docs, interface docs, and the critical distinction between documenting "what" vs "why". Use whenever the user mentions "JSDoc", "TSDoc", "code review", "code documentation", or "add docs".
+  Use when writing or reviewing TypeScript code to ensure proper documentation with file preambles, function docs, interface docs, and the critical distinction between documenting "what" vs "why". Use whenever the user mentions "JSDoc", "TSDoc", "code review", "code documentation", or "add docs".
 ---
 
 # JSDoc Best Practices
@@ -40,6 +40,7 @@ function getUserById(id: string): User | null { ... }
 ```
 
 This documentation adds value by explaining:
+
 - What kind of ID (UUID vs legacy)
 - What happens when not found
 - Why this specific implementation exists (DataLoader batching)
@@ -50,21 +51,21 @@ The project enforces JSDoc with these rules:
 
 ### Required Documentation
 
-| Rule | Setting | What It Enforces |
-|------|---------|------------------|
-| `jsdoc/require-jsdoc` | error | JSDoc on function declarations, interfaces, type aliases, and PascalCase arrow functions |
-| `jsdoc/require-param-description` | error | All `@param` tags must have descriptions |
-| `jsdoc/require-returns-description` | error | All `@returns` tags must have descriptions |
-| `jsdoc/require-property-description` | error | All `@property` tags must have descriptions |
+| Rule                                 | Setting | What It Enforces                                                                         |
+| ------------------------------------ | ------- | ---------------------------------------------------------------------------------------- |
+| `jsdoc/require-jsdoc`                | error   | JSDoc on function declarations, interfaces, type aliases, and PascalCase arrow functions |
+| `jsdoc/require-param-description`    | error   | All `@param` tags must have descriptions                                                 |
+| `jsdoc/require-returns-description`  | error   | All `@returns` tags must have descriptions                                               |
+| `jsdoc/require-property-description` | error   | All `@property` tags must have descriptions                                              |
 
 ### Allowed Tags
 
-| Rule | Setting | Effect |
-|------|---------|--------|
-| `jsdoc/check-tag-names` | `definedTags: ["remarks"]` | Allows `@remarks` for "why" documentation |
-| `jsdoc/no-types` | off | TypeScript types in JSDoc are optional |
-| `jsdoc/require-param-type` | off | Types come from TypeScript, not JSDoc |
-| `jsdoc/require-returns-type` | off | Types come from TypeScript, not JSDoc |
+| Rule                         | Setting                    | Effect                                    |
+| ---------------------------- | -------------------------- | ----------------------------------------- |
+| `jsdoc/check-tag-names`      | `definedTags: ["remarks"]` | Allows `@remarks` for "why" documentation |
+| `jsdoc/no-types`             | off                        | TypeScript types in JSDoc are optional    |
+| `jsdoc/require-param-type`   | off                        | Types come from TypeScript, not JSDoc     |
+| `jsdoc/require-returns-type` | off                        | Types come from TypeScript, not JSDoc     |
 
 ### What Requires Documentation
 
@@ -102,11 +103,11 @@ Every file should have a preamble comment at the top:
  */
 ```
 
-| Tag | Purpose |
-|-----|---------|
-| `@file` | The filename (for navigation and search) |
-| `@description` | What this file provides |
-| `@module` | The feature module this belongs to |
+| Tag            | Purpose                                  |
+| -------------- | ---------------------------------------- |
+| `@file`        | The filename (for navigation and search) |
+| `@description` | What this file provides                  |
+| `@module`      | The feature module this belongs to       |
 
 ### Service Documentation
 
@@ -175,13 +176,13 @@ Use `@remarks` to document the "why" and important context:
 
 ### When to Use @remarks
 
-| Use Case | Example |
-|----------|---------|
-| Design decisions | `@remarks Uses closure pattern to cache between Lambda invocations` |
-| Usage constraints | `@remarks Call getLoaders() once per GraphQL request in context factory` |
-| Non-obvious behavior | `@remarks Maintains input order for DataLoader compatibility` |
-| Important caveats | `@remarks All methods are idempotent - safe to retry` |
-| Integration details | `@remarks Connects on module initialization, disconnects on destruction` |
+| Use Case             | Example                                                                  |
+| -------------------- | ------------------------------------------------------------------------ |
+| Design decisions     | `@remarks Uses closure pattern to cache between Lambda invocations`      |
+| Usage constraints    | `@remarks Call getLoaders() once per GraphQL request in context factory` |
+| Non-obvious behavior | `@remarks Maintains input order for DataLoader compatibility`            |
+| Important caveats    | `@remarks All methods are idempotent - safe to retry`                    |
+| Integration details  | `@remarks Connects on module initialization, disconnects on destruction` |
 
 ### @remarks Format
 
@@ -232,13 +233,13 @@ Use inline for single remarks:
 
 ### Parameter Description Guidelines
 
-| Include | Avoid |
-|---------|-------|
-| Valid value ranges | Restating the parameter name |
-| Format requirements | Restating the type |
-| Default behavior | Obvious information |
-| Edge cases | Implementation details |
-| Units (ms, bytes, etc.) | Internal variable names |
+| Include                 | Avoid                        |
+| ----------------------- | ---------------------------- |
+| Valid value ranges      | Restating the parameter name |
+| Format requirements     | Restating the type           |
+| Default behavior        | Obvious information          |
+| Edge cases              | Implementation details       |
+| Units (ms, bytes, etc.) | Internal variable names      |
 
 ## Return Value Descriptions
 
@@ -305,12 +306,12 @@ async getUser(id: string): Promise<User> { ... }
 /**
  * Loops through users and filters by active status
  */
-const activeUsers = users.filter(u => u.active);
+const activeUsers = users.filter((u) => u.active);
 
 // Correct: Self-documenting code needs no comment
 // If explanation is needed, explain WHY:
 // Active users are filtered first to avoid unnecessary permission checks
-const activeUsers = users.filter(u => u.active);
+const activeUsers = users.filter((u) => u.active);
 ```
 
 ## Escaping @ Symbols in JSDoc
@@ -335,7 +336,7 @@ When mentioning decorators in description text, wrap them in backticks:
 
 In `@example` blocks, use fenced code blocks and escape `@` as `\@`:
 
-```typescript
+````typescript
 /**
  * Creates a queue processor
  * @example
@@ -346,16 +347,16 @@ In `@example` blocks, use fenced code blocks and escape `@` as `\@`:
  *   async handle(job: Job) { ... }
  * }
  * ```
-*/
-```
+ */
+````
 
 ### Quick Reference for Escaping
 
-| Context | Approach | Example |
-|---------|----------|---------|
-| Prose/description | Wrap in backticks | `` `@Injectable()` `` |
-| @example block | Escape with backslash | `\@Processor('name')` |
-| Code comments | No escaping needed | `// Uses @Injectable` |
+| Context           | Approach              | Example               |
+| ----------------- | --------------------- | --------------------- |
+| Prose/description | Wrap in backticks     | `` `@Injectable()` `` |
+| @example block    | Escape with backslash | `\@Processor('name')` |
+| Code comments     | No escaping needed    | `// Uses @Injectable` |
 
 ## Quick Reference
 

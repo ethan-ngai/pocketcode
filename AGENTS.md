@@ -12,4 +12,4 @@ Shebang is a TanStack Start-based SMS-REPL supporting Java and Python execution 
 
 ## Conventions
 
-- Always document all code using  `/skills/jsdoc-best-practices` as guidance. 
+- Always document all code using `/skills/jsdoc-best-practices` as guidance.
