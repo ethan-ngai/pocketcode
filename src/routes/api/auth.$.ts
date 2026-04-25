@@ -4,7 +4,11 @@
  * @module routes
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { getRequest } from "@tanstack/react-start/server";
+import { env } from "cloudflare:workers";
+
 import { handleAuthRequest } from "../../features/auth/auth.functions";
+import type { Env } from "../../shared/env";
 
 /**
  * Better Auth catch-all route definition.
@@ -14,8 +18,8 @@ import { handleAuthRequest } from "../../features/auth/auth.functions";
 export const Route = createFileRoute("/api/auth/$")({
   server: {
     handlers: {
-      GET: () => handleAuthRequest(),
-      POST: () => handleAuthRequest(),
+      GET: () => handleAuthRequest(getRequest(), env as Env),
+      POST: () => handleAuthRequest(getRequest(), env as Env),
     },
   },
 });

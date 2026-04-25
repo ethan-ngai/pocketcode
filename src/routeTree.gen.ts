@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppAdminRouteRouteImport } from './routes/app/admin/route'
 import { Route as AppAdminIndexRouteImport } from './routes/app/admin/index'
 import { Route as AppAdminUsersRouteImport } from './routes/app/admin/users'
 import { Route as AppAdminMessagesRouteImport } from './routes/app/admin/messages'
@@ -30,25 +31,30 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
-  id: '/admin/',
-  path: '/admin/',
+const AppAdminRouteRoute = AppAdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AppRouteRoute,
+} as any)
+const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAdminRouteRoute,
 } as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
-  id: '/admin/users',
-  path: '/admin/users',
-  getParentRoute: () => AppRouteRoute,
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AppAdminRouteRoute,
 } as any)
 const AppAdminMessagesRoute = AppAdminMessagesRouteImport.update({
-  id: '/admin/messages',
-  path: '/admin/messages',
-  getParentRoute: () => AppRouteRoute,
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => AppAdminRouteRoute,
 } as any)
 const AppAdminExecutionsRoute = AppAdminExecutionsRouteImport.update({
-  id: '/admin/executions',
-  path: '/admin/executions',
-  getParentRoute: () => AppRouteRoute,
+  id: '/executions',
+  path: '/executions',
+  getParentRoute: () => AppAdminRouteRoute,
 } as any)
 const ApiTwilioStatusRoute = ApiTwilioStatusRouteImport.update({
   id: '/api/twilio/status',
@@ -74,6 +80,7 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
+  '/app/admin': typeof AppAdminRouteRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/repl/execute': typeof ApiReplExecuteRoute
   '/api/twilio/inbound': typeof ApiTwilioInboundRoute
@@ -99,6 +106,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
+  '/app/admin': typeof AppAdminRouteRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/repl/execute': typeof ApiReplExecuteRoute
   '/api/twilio/inbound': typeof ApiTwilioInboundRoute
@@ -113,6 +121,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/app/admin'
     | '/api/auth/$'
     | '/api/repl/execute'
     | '/api/twilio/inbound'
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
+    | '/app/admin'
     | '/api/auth/$'
     | '/api/repl/execute'
     | '/api/twilio/inbound'
@@ -172,33 +182,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/admin': {
+      id: '/app/admin'
+      path: '/admin'
+      fullPath: '/app/admin'
+      preLoaderRoute: typeof AppAdminRouteRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/admin/': {
       id: '/app/admin/'
-      path: '/admin'
+      path: '/'
       fullPath: '/app/admin/'
       preLoaderRoute: typeof AppAdminIndexRouteImport
-      parentRoute: typeof AppRouteRoute
+      parentRoute: typeof AppAdminRouteRoute
     }
     '/app/admin/users': {
       id: '/app/admin/users'
-      path: '/admin/users'
+      path: '/users'
       fullPath: '/app/admin/users'
       preLoaderRoute: typeof AppAdminUsersRouteImport
-      parentRoute: typeof AppRouteRoute
+      parentRoute: typeof AppAdminRouteRoute
     }
     '/app/admin/messages': {
       id: '/app/admin/messages'
-      path: '/admin/messages'
+      path: '/messages'
       fullPath: '/app/admin/messages'
       preLoaderRoute: typeof AppAdminMessagesRouteImport
-      parentRoute: typeof AppRouteRoute
+      parentRoute: typeof AppAdminRouteRoute
     }
     '/app/admin/executions': {
       id: '/app/admin/executions'
-      path: '/admin/executions'
+      path: '/executions'
       fullPath: '/app/admin/executions'
       preLoaderRoute: typeof AppAdminExecutionsRouteImport
-      parentRoute: typeof AppRouteRoute
+      parentRoute: typeof AppAdminRouteRoute
     }
     '/api/twilio/status': {
       id: '/api/twilio/status'
@@ -231,18 +248,30 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AppRouteRouteChildren {
+interface AppAdminRouteRouteChildren {
   AppAdminExecutionsRoute: typeof AppAdminExecutionsRoute
   AppAdminMessagesRoute: typeof AppAdminMessagesRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
 
-const AppRouteRouteChildren: AppRouteRouteChildren = {
+const AppAdminRouteRouteChildren: AppAdminRouteRouteChildren = {
   AppAdminExecutionsRoute: AppAdminExecutionsRoute,
   AppAdminMessagesRoute: AppAdminMessagesRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
+}
+
+const AppAdminRouteRouteWithChildren = AppAdminRouteRoute._addFileChildren(
+  AppAdminRouteRouteChildren,
+)
+
+interface AppRouteRouteChildren {
+  AppAdminRouteRoute: typeof AppAdminRouteRouteWithChildren
+}
+
+const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppAdminRouteRoute: AppAdminRouteRouteWithChildren,
 }
 
 const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(

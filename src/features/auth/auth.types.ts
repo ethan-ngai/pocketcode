@@ -9,7 +9,7 @@
  * @remarks Better Auth may own more fields later, but admin and SMS linkage only
  * need this stable subset during parallel implementation.
  */
-export interface CurrentUser {
+export interface AuthUser {
   /** Better Auth user id. */
   id: string;
   /** Email address used for web/admin login. */
@@ -19,3 +19,10 @@ export interface CurrentUser {
   /** Whether the user can access admin-only routes and APIs. */
   isAdmin: boolean;
 }
+
+/**
+ * Backward-compatible alias for feature code created before Better Auth landed.
+ * @remarks Keeping the old name avoids forcing unrelated workstreams to rename
+ * their local contracts while `AuthUser` becomes the public auth identity name.
+ */
+export type CurrentUser = AuthUser;

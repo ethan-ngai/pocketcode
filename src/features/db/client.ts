@@ -10,7 +10,13 @@ import postgres from "postgres";
 import type { ExecutionResult, ExecutionStatus, ReplLanguage } from "../repl/repl.types";
 import { createId } from "../../shared/ids";
 import type { AppConfig } from "../../shared/env";
-import type { ExecutionJob, ReplSession, SmsIdentity, SmsIdentityUsage, SmsMessage } from "./db.types";
+import type {
+  ExecutionJob,
+  ReplSession,
+  SmsIdentity,
+  SmsIdentityUsage,
+  SmsMessage,
+} from "./db.types";
 import * as schema from "./schema";
 
 /**
@@ -457,7 +463,10 @@ export function createDrizzleDb(db: DatabaseClient): Db {
         .select()
         .from(schema.replSessions)
         .where(
-          and(eq(schema.replSessions.smsIdentityId, identityId), eq(schema.replSessions.status, "active")),
+          and(
+            eq(schema.replSessions.smsIdentityId, identityId),
+            eq(schema.replSessions.status, "active"),
+          ),
         )
         .orderBy(desc(schema.replSessions.lastActiveAt))
         .limit(1);
@@ -536,7 +545,10 @@ export function createDrizzleDb(db: DatabaseClient): Db {
           lastActiveAt: new Date(),
         })
         .where(
-          and(eq(schema.replSessions.smsIdentityId, identityId), eq(schema.replSessions.status, "active")),
+          and(
+            eq(schema.replSessions.smsIdentityId, identityId),
+            eq(schema.replSessions.status, "active"),
+          ),
         );
     },
 
@@ -544,8 +556,16 @@ export function createDrizzleDb(db: DatabaseClient): Db {
       const rows = await db
         .select({ value: count() })
         .from(schema.executionJobs)
-        .innerJoin(schema.smsIdentities, eq(schema.executionJobs.smsIdentityId, schema.smsIdentities.id))
-        .where(and(eq(schema.smsIdentities.phoneE164, phoneE164), gte(schema.executionJobs.createdAt, since)))
+        .innerJoin(
+          schema.smsIdentities,
+          eq(schema.executionJobs.smsIdentityId, schema.smsIdentities.id),
+        )
+        .where(
+          and(
+            eq(schema.smsIdentities.phoneE164, phoneE164),
+            gte(schema.executionJobs.createdAt, since),
+          ),
+        )
         .limit(1);
 
       return Number(rows[0]?.value ?? 0);
@@ -592,8 +612,14 @@ export function createDrizzleDb(db: DatabaseClient): Db {
           lastActiveAt: sql<Date | null>`max(${schema.replSessions.lastActiveAt})`,
         })
         .from(schema.smsIdentities)
-        .leftJoin(schema.executionJobs, eq(schema.executionJobs.smsIdentityId, schema.smsIdentities.id))
-        .leftJoin(schema.replSessions, eq(schema.replSessions.smsIdentityId, schema.smsIdentities.id))
+        .leftJoin(
+          schema.executionJobs,
+          eq(schema.executionJobs.smsIdentityId, schema.smsIdentities.id),
+        )
+        .leftJoin(
+          schema.replSessions,
+          eq(schema.replSessions.smsIdentityId, schema.smsIdentities.id),
+        )
         .groupBy(
           schema.smsIdentities.id,
           schema.smsIdentities.phoneE164,
