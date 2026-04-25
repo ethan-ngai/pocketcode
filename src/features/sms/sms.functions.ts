@@ -9,7 +9,7 @@ import { runExecutionJob } from "../repl/jobs";
 import type { ExecutionResult, ReplLanguage, SmsCommand } from "../repl/repl.types";
 import type { Env } from "../../shared/env";
 import { isLikelyE164 } from "../../shared/validation";
-import { log } from "../observability/logger";
+import { hashLogValue, log, logger } from "../observability/logger";
 import {
   DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
   DEFAULT_EXECUTION_TIMEOUT_MS,
@@ -68,6 +68,11 @@ export async function handleTwilioInbound(
 
     const inbound = normalizeInboundSms(parsedBody);
     const db = resolveDb(env, dependencies);
+
+    logger.info("sms.inbound.received", {
+      messageSid: inbound.providerMessageSid,
+      phoneHash: hashLogValue(inbound.fromE164),
+    });
 
     if (inbound.providerMessageSid) {
       const existing = await db.findSmsMessageByProviderSid(inbound.providerMessageSid);
@@ -268,6 +273,15 @@ async function sendExecutionResultSms(input: {
       rawPayload: { executionJobId: input.job.id },
     });
   }
+
+  logger.info("execution.finished", {
+    jobId: input.job.id,
+    language: input.job.language,
+    status: result.status,
+    durationMs: result.durationMs,
+    stdoutChars: result.stdout.length,
+    stderrChars: result.stderr.length,
+  });
 }
 
 /**
@@ -448,25 +462,6 @@ function logTwilioSignatureFailure(request: Request, parsedBody: URLSearchParams
     providerMessageSidHash: hashLogValue(parsedBody.get("MessageSid")),
     fromHash: hashLogValue(parsedBody.get("From")),
   });
-}
-
-/**
- * Produces a short redacted fingerprint for security logs.
- * @param value - Provider or phone identifier that should not be written in full.
- * @returns Short hash string or null when the value is absent.
- */
-function hashLogValue(value: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
-  let hash = 0;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) | 0;
-  }
-
-  return Math.abs(hash).toString(16);
 }
 
 /**
