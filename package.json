@@ -6,12 +6,15 @@
     "dev": "vite dev",
     "build": "vite build",
     "deploy": "wrangler deploy",
+    "db:generate": "drizzle-kit generate",
     "cf-typegen": "wrangler types",
     "check": "tsc --noEmit"
   },
   "dependencies": {
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
     "react": "latest",
     "react-dom": "latest"
   },
@@ -21,6 +24,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
+    "drizzle-kit": "^0.31.10",
     "typescript": "latest",
     "vite": "latest",
     "wrangler": "latest"

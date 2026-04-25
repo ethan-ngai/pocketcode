@@ -14,8 +14,5 @@ import { defineConfig } from "vite";
  * compile against Worker APIs before feature work adds bindings like Hyperdrive.
  */
 export default defineConfig({
-  fmt: {
-    ignorePatterns: [],
-  },
   plugins: [cloudflare({ viteEnvironment: { name: "ssr" } }), tanstackStart(), react()],
 });
