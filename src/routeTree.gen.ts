@@ -19,6 +19,7 @@ import { Route as AppAdminMessagesRouteImport } from './routes/app/admin/message
 import { Route as AppAdminExecutionsRouteImport } from './routes/app/admin/executions'
 import { Route as ApiSms8InboundRouteImport } from './routes/api/sms8.inbound'
 import { Route as ApiReplExecuteRouteImport } from './routes/api/repl.execute'
+import { Route as ApiDemoSmsAllowlistRouteImport } from './routes/api/demo.sms-allowlist'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth.$'
 
 const DemoRoute = DemoRouteImport.update({
@@ -71,6 +72,11 @@ const ApiReplExecuteRoute = ApiReplExecuteRouteImport.update({
   path: '/api/repl/execute',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDemoSmsAllowlistRoute = ApiDemoSmsAllowlistRouteImport.update({
+  id: '/api/demo/sms-allowlist',
+  path: '/api/demo/sms-allowlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -83,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/demo': typeof DemoRoute
   '/app/admin': typeof AppAdminRouteRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/demo/sms-allowlist': typeof ApiDemoSmsAllowlistRoute
   '/api/repl/execute': typeof ApiReplExecuteRoute
   '/api/sms8/inbound': typeof ApiSms8InboundRoute
   '/app/admin/executions': typeof AppAdminExecutionsRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/app': typeof AppRouteRouteWithChildren
   '/demo': typeof DemoRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/demo/sms-allowlist': typeof ApiDemoSmsAllowlistRoute
   '/api/repl/execute': typeof ApiReplExecuteRoute
   '/api/sms8/inbound': typeof ApiSms8InboundRoute
   '/app/admin/executions': typeof AppAdminExecutionsRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/demo': typeof DemoRoute
   '/app/admin': typeof AppAdminRouteRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/demo/sms-allowlist': typeof ApiDemoSmsAllowlistRoute
   '/api/repl/execute': typeof ApiReplExecuteRoute
   '/api/sms8/inbound': typeof ApiSms8InboundRoute
   '/app/admin/executions': typeof AppAdminExecutionsRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/demo'
     | '/app/admin'
     | '/api/auth/$'
+    | '/api/demo/sms-allowlist'
     | '/api/repl/execute'
     | '/api/sms8/inbound'
     | '/app/admin/executions'
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/demo'
     | '/api/auth/$'
+    | '/api/demo/sms-allowlist'
     | '/api/repl/execute'
     | '/api/sms8/inbound'
     | '/app/admin/executions'
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/demo'
     | '/app/admin'
     | '/api/auth/$'
+    | '/api/demo/sms-allowlist'
     | '/api/repl/execute'
     | '/api/sms8/inbound'
     | '/app/admin/executions'
@@ -162,6 +174,7 @@ export interface RootRouteChildren {
   AppRouteRoute: typeof AppRouteRouteWithChildren
   DemoRoute: typeof DemoRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDemoSmsAllowlistRoute: typeof ApiDemoSmsAllowlistRoute
   ApiReplExecuteRoute: typeof ApiReplExecuteRoute
   ApiSms8InboundRoute: typeof ApiSms8InboundRoute
 }
@@ -238,6 +251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiReplExecuteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/demo/sms-allowlist': {
+      id: '/api/demo/sms-allowlist'
+      path: '/api/demo/sms-allowlist'
+      fullPath: '/api/demo/sms-allowlist'
+      preLoaderRoute: typeof ApiDemoSmsAllowlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -283,6 +303,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRouteRoute: AppRouteRouteWithChildren,
   DemoRoute: DemoRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDemoSmsAllowlistRoute: ApiDemoSmsAllowlistRoute,
   ApiReplExecuteRoute: ApiReplExecuteRoute,
   ApiSms8InboundRoute: ApiSms8InboundRoute,
 }

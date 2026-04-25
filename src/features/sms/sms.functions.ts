@@ -42,6 +42,28 @@ export interface SmsDependencies {
 }
 
 /**
+ * Normalized SMS8 webhook body before provider records are validated.
+ * @remarks SMS8 can deliver callbacks as either form fields or JSON depending on
+ * webhook configuration, so this shape preserves signature candidates for both.
+ */
+interface Sms8WebhookPayload {
+  /** Canonical JSON array string used by the existing inbound normalizer. */
+  messagesJson: string;
+  /** Candidate strings that SMS8 may have signed for this callback shape. */
+  signatureCandidates: readonly string[];
+}
+
+/**
+ * JSON body accepted by the public demo allowlist form.
+ * @remarks Keeping this deliberately narrow avoids letting the demo endpoint
+ * become a general support console before auth and audit controls are added.
+ */
+interface DemoSmsAllowlistBody {
+  /** E.164 phone number to enable for real SMS execution. */
+  phoneE164?: unknown;
+}
+
+/**
  * Handles SMS8 inbound SMS webhooks.
  * @param request - Server route request containing SMS8's form webhook body.
  * @param env - Worker bindings for SMS8 credentials and execution policy.
@@ -58,15 +80,14 @@ export async function handleSms8Inbound(
   dependencies: SmsDependencies = {},
 ): Promise<Response> {
   try {
-    const parsedBody = await parseWebhookForm(request);
-    const messagesJson = requireFormValue(parsedBody, "messages");
+    const payload = await parseSms8WebhookPayload(request);
 
-    if (!(await validateSms8Request(request, env, messagesJson))) {
-      logSms8SignatureFailure(request, parsedBody);
+    if (!(await validateSms8Request(request, env, payload.signatureCandidates))) {
+      logSms8SignatureFailure(request, payload.messagesJson);
       return new Response("Invalid SMS8 signature", { status: 403 });
     }
 
-    const inboundMessages = normalizeInboundSmsMessages(messagesJson);
+    const inboundMessages = normalizeInboundSmsMessages(payload.messagesJson);
     const db = resolveDb(env, dependencies);
 
     for (const inbound of inboundMessages) {
@@ -77,6 +98,41 @@ export async function handleSms8Inbound(
   } catch (error) {
     log("error", "SMS8 inbound webhook failed", { error: errorToLog(error) });
     return webhookResponse("Temporary SMS service error.", 500);
+  }
+}
+
+/**
+ * Enables a phone number for SMS execution from the demo page.
+ * @param request - JSON request containing an E.164 `phoneE164` value.
+ * @param env - Worker bindings used to reach the same SMS database as webhooks.
+ * @param dependencies - Optional test overrides for the database boundary.
+ * @returns JSON result consumed by the demo allowlist form.
+ * @remarks This augments the static `SMS_ALLOWLIST` with a database-backed flag
+ * because deployed Worker environment bindings cannot be mutated per request.
+ */
+export async function handleDemoSmsAllowlist(
+  request: Request,
+  env: Env,
+  dependencies: Pick<SmsDependencies, "db"> = {},
+): Promise<Response> {
+  try {
+    const body = (await request.json().catch(() => null)) as DemoSmsAllowlistBody | null;
+    const validation = validateDemoSmsAllowlistBody(body);
+
+    if (!validation.ok) {
+      return Response.json({ error: validation.error }, { status: 400 });
+    }
+
+    const db = resolveDb(env, dependencies);
+    const identity = await db.verifySmsIdentity(validation.phoneE164);
+
+    return Response.json({
+      allowed: true,
+      phoneE164: identity.phoneE164,
+    });
+  } catch (error) {
+    log("error", "Demo SMS allowlist update failed", { error: errorToLog(error) });
+    return Response.json({ error: "Unable to update the SMS allowlist." }, { status: 500 });
   }
 }
 
@@ -116,7 +172,7 @@ async function processInboundMessage(input: {
     rawPayload: input.inbound.rawPayload,
   });
   const identity = await input.db.findOrCreateSmsIdentity(input.inbound.fromE164);
-  const access = checkSmsAllowlist(input.env, identity.phoneE164);
+  const access = checkSmsAllowlist(input.env, identity);
   const session = await input.db.getActiveSession(identity.id);
   const currentDefaultLanguage = session?.language ?? identity.defaultLanguage;
   const command = parseSmsCommand(input.inbound.body, currentDefaultLanguage);
@@ -327,14 +383,197 @@ async function sendExecutionResultSms(input: {
 }
 
 /**
- * Parses an SMS8 form body without trusting any field values.
- * @param request - Webhook request with an x-www-form-urlencoded body.
- * @returns Parsed form parameters.
- * @remarks Reading text keeps signature validation aligned with SMS8's
- * form-encoded webhook contract without reserializing signed fields.
+ * Parses an SMS8 webhook body without trusting provider-selected content type.
+ * @param request - Webhook request carrying form-encoded or JSON SMS8 payloads.
+ * @returns Normalized messages JSON plus signature validation candidates.
+ * @remarks SMS8 has been observed sending JSON callbacks even when older docs
+ * describe form fields, so the parser keeps both variants at the edge.
  */
-async function parseWebhookForm(request: Request): Promise<URLSearchParams> {
-  return new URLSearchParams(await request.text());
+async function parseSms8WebhookPayload(request: Request): Promise<Sms8WebhookPayload> {
+  const rawBody = await request.text();
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+
+  if (contentType.includes("application/json")) {
+    return parseSms8JsonWebhookPayload(rawBody);
+  }
+
+  const parsedBody = new URLSearchParams(rawBody);
+  const messagesJson = requireFormValue(parsedBody, "messages");
+
+  return {
+    messagesJson,
+    signatureCandidates: [messagesJson],
+  };
+}
+
+/**
+ * Parses SMS8's JSON webhook variant.
+ * @param rawBody - Raw request body read once at the route boundary.
+ * @returns Normalized messages JSON plus conservative signature candidates.
+ * @remarks The full body candidate handles JSON webhooks that sign the whole
+ * callback, while the compact messages candidate handles providers signing the
+ * embedded `messages` value as they do for form callbacks.
+ */
+function parseSms8JsonWebhookPayload(rawBody: string): Sms8WebhookPayload {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    throw new Error("Invalid SMS8 JSON payload");
+  }
+
+  const messages = readSms8JsonMessages(parsed);
+  const messagesJson = typeof messages === "string" ? messages.trim() : JSON.stringify(messages);
+  const rawMessagesJson = Array.isArray(parsed)
+    ? rawBody.trim()
+    : isSms8Message(parsed)
+      ? rawBody.trim()
+      : extractRawJsonPropertyValue(rawBody, "messages");
+
+  if (!messagesJson) {
+    throw new Error("Missing SMS8 messages field");
+  }
+
+  return {
+    messagesJson,
+    signatureCandidates: compactSignatureCandidates([messagesJson, rawMessagesJson, rawBody]),
+  };
+}
+
+/**
+ * Reads SMS8 message records from the JSON callback variants seen in production.
+ * @param parsed - Parsed JSON body from the webhook request.
+ * @returns Message collection or raw messages string ready for normalization.
+ * @remarks SMS8 can post either a wrapper object, a message array, or a single
+ * message object depending on webhook configuration.
+ */
+function readSms8JsonMessages(parsed: unknown): unknown {
+  if (Array.isArray(parsed) || isSms8Message(parsed)) {
+    return Array.isArray(parsed) ? parsed : [parsed];
+  }
+
+  return readJsonObjectProperty(parsed, "messages");
+}
+
+/**
+ * Extracts the exact JSON value text for a top-level property.
+ * @param rawBody - Raw JSON request body supplied by SMS8.
+ * @param key - Top-level property whose value may be signed by the provider.
+ * @returns Raw JSON value substring, or null when it cannot be found safely.
+ * @remarks SMS8's docs sign the raw `messages` field; preserving the original
+ * substring avoids signature drift from JSON parse/stringify normalization.
+ */
+function extractRawJsonPropertyValue(rawBody: string, key: string): string | null {
+  const keyPattern = new RegExp(`"${escapeRegExp(key)}"\\s*:`);
+  const match = keyPattern.exec(rawBody);
+
+  if (!match) {
+    return null;
+  }
+
+  const valueStart = match.index + match[0].length;
+  const firstNonWhitespaceOffset = rawBody.slice(valueStart).search(/\S/);
+
+  if (firstNonWhitespaceOffset < 0) {
+    return null;
+  }
+
+  const start = valueStart + firstNonWhitespaceOffset;
+  const end = findJsonValueEnd(rawBody, start);
+
+  return end === null ? null : rawBody.slice(start, end).trim();
+}
+
+/**
+ * Finds the end index of a JSON value inside a larger object body.
+ * @param rawBody - Full JSON text being scanned.
+ * @param start - Index of the first non-whitespace character in the value.
+ * @returns Exclusive end index, or null when the JSON fragment is malformed.
+ */
+function findJsonValueEnd(rawBody: string, start: number): number | null {
+  const opener = rawBody[start];
+
+  if (opener === '"' || opener === "[" || opener === "{") {
+    return findStructuredJsonValueEnd(rawBody, start);
+  }
+
+  const delimiter = rawBody.slice(start).search(/[,}\]]/);
+  return delimiter < 0 ? rawBody.length : start + delimiter;
+}
+
+/**
+ * Scans string, array, or object JSON values while respecting quoted text.
+ * @param rawBody - Full JSON text being scanned.
+ * @param start - Index of the opening quote, bracket, or brace.
+ * @returns Exclusive end index, or null when no matching close is found.
+ */
+function findStructuredJsonValueEnd(rawBody: string, start: number): number | null {
+  const opener = rawBody[start];
+  const stack = opener === '"' ? [] : [opener];
+  let inString = opener === '"';
+  let escaped = false;
+
+  for (let index = start + 1; index < rawBody.length; index += 1) {
+    const char = rawBody[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        if (stack.length === 0) {
+          return index + 1;
+        }
+
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "[" || char === "{") {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === "]" || char === "}") {
+      const expected = char === "]" ? "[" : "{";
+
+      if (stack.pop() !== expected) {
+        return null;
+      }
+
+      if (stack.length === 0) {
+        return index + 1;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Removes empty and duplicate signature candidates while preserving order.
+ * @param candidates - Potential provider-signed strings.
+ * @returns Unique non-empty candidates for timing-safe comparison.
+ */
+function compactSignatureCandidates(candidates: Array<string | null>): readonly string[] {
+  return Array.from(new Set(candidates.filter((candidate): candidate is string => Boolean(candidate))));
+}
+
+/**
+ * Escapes a string for literal use inside a regular expression.
+ * @param value - Text that should be matched exactly.
+ * @returns Regex-safe literal text.
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -421,6 +660,20 @@ function requireFormValue(parsedBody: URLSearchParams, key: string): string {
 }
 
 /**
+ * Reads one property from a parsed JSON object.
+ * @param value - Parsed JSON payload from SMS8.
+ * @param key - Provider field expected at the top level.
+ * @returns Property value when the payload is object-like.
+ */
+function readJsonObjectProperty(value: unknown, key: string): unknown {
+  if (!value || typeof value !== "object" || !(key in value)) {
+    throw new Error(`Missing SMS8 ${key} field`);
+  }
+
+  return (value as Record<string, unknown>)[key];
+}
+
+/**
  * Resolves the database dependency for SMS runtime work.
  * @param env - Worker bindings, optionally carrying a future DB implementation.
  * @param dependencies - Explicit dependency overrides from tests or adapters.
@@ -462,13 +715,16 @@ type SmsAccessDecision =
 /**
  * Checks whether a phone number may create execution jobs.
  * @param env - Worker bindings carrying the temporary pilot allowlist.
- * @param phoneE164 - Sender phone number after provider normalization.
+ * @param identity - Sender identity after provider normalization and persistence.
  * @returns Access decision for job creation.
- * @remarks Non-production deployments keep an unset allowlist permissive so
- * local webhook tests do not require pilot configuration; production denies
- * execution unless the sender is explicitly listed.
+ * @remarks Verified identities are the dynamic allowlist managed at runtime,
+ * while `SMS_ALLOWLIST` remains the immutable deployment-level fallback.
  */
-function checkSmsAllowlist(env: Env, phoneE164: string): SmsAccessDecision {
+function checkSmsAllowlist(env: Env, identity: SmsIdentity): SmsAccessDecision {
+  if (identity.isVerified) {
+    return { allowed: true };
+  }
+
   const rawAllowlist = env.SMS_ALLOWLIST?.trim();
 
   if (!rawAllowlist) {
@@ -488,7 +744,7 @@ function checkSmsAllowlist(env: Env, phoneE164: string): SmsAccessDecision {
       .filter(Boolean),
   );
 
-  if (allowedPhones.has(phoneE164)) {
+  if (allowedPhones.has(identity.phoneE164)) {
     return { allowed: true };
   }
 
@@ -539,6 +795,23 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 }
 
 /**
+ * Validates the demo allowlist request body.
+ * @param body - Parsed JSON payload from the browser.
+ * @returns Normalized phone number or a form-safe error message.
+ */
+function validateDemoSmsAllowlistBody(
+  body: DemoSmsAllowlistBody | null,
+): { ok: true; phoneE164: string } | { ok: false; error: string } {
+  const phoneE164 = body?.phoneE164;
+
+  if (typeof phoneE164 !== "string" || !isLikelyE164(phoneE164.trim())) {
+    return { ok: false, error: "Enter a phone number in E.164 format, like +15555550123." };
+  }
+
+  return { ok: true, phoneE164: phoneE164.trim() };
+}
+
+/**
  * Selects the per-language execution timeout for SMS jobs.
  * @param env - Worker bindings that may override the default execution budget.
  * @param language - Runtime selected by parser or user session state.
@@ -566,12 +839,12 @@ function defaultWaitUntil(promise: Promise<unknown>): void {
  * @remarks Forged webhooks are expected during probing, so the log keeps enough
  * context for triage without storing SMS text or raw payloads.
  */
-function logSms8SignatureFailure(request: Request, parsedBody: URLSearchParams): void {
+function logSms8SignatureFailure(request: Request, messagesJson: string): void {
   log("warn", "Rejected SMS8 webhook signature", {
     path: new URL(request.url).pathname,
     hasSignature:
       request.headers.has("x-sg-signature") || request.headers.has("http_x_sg_signature"),
-    messagesHash: hashLogValue(parsedBody.get("messages")),
+    messagesHash: hashLogValue(messagesJson),
   });
 }
 

@@ -50,12 +50,32 @@ interface ManualExecuteResponse {
   errorCode?: string;
 }
 
+interface DemoAllowlistResponse {
+  /** Whether the demo endpoint enabled SMS execution for the submitted number. */
+  allowed?: boolean;
+  /** Normalized E.164 phone number that was persisted. */
+  phoneE164?: string;
+  /** Form-safe error message when validation or persistence fails. */
+  error?: string;
+}
+
+type AllowlistStatus =
+  | { kind: "idle"; message: string }
+  | { kind: "submitting"; message: string }
+  | { kind: "success"; message: string }
+  | { kind: "error"; message: string };
+
 /**
  * Renders the deployed SMS execution demo.
  * @returns Interactive phone simulator and supporting instructions.
  */
 function DemoRoute(): ReactElement {
   const [draft, setDraft] = useState('print("hello from pocketcode")');
+  const [allowlistPhone, setAllowlistPhone] = useState("");
+  const [allowlistStatus, setAllowlistStatus] = useState<AllowlistStatus>({
+    kind: "idle",
+    message: "Add your phone number before texting the live SMS gateway.",
+  });
   const [isRunning, setIsRunning] = useState(false);
   const [messages, setMessages] = useState<DemoMessage[]>([
     {
@@ -130,6 +150,49 @@ function DemoRoute(): ReactElement {
   }
 
   /**
+   * Adds a real phone number to the SMS pilot allowlist.
+   * @param event - Form submission event from the allowlist card.
+   */
+  async function handleAllowlistSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    const phoneE164 = allowlistPhone.trim();
+    if (!phoneE164 || allowlistStatus.kind === "submitting") {
+      return;
+    }
+
+    setAllowlistStatus({ kind: "submitting", message: "Adding number to the SMS pilot..." });
+
+    try {
+      const response = await fetch("/api/demo/sms-allowlist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phoneE164 }),
+      });
+      const payload = (await response.json().catch(() => null)) as DemoAllowlistResponse | null;
+
+      if (!response.ok || !payload?.allowed || !payload.phoneE164) {
+        setAllowlistStatus({
+          kind: "error",
+          message: payload?.error ?? "Unable to add that number right now.",
+        });
+        return;
+      }
+
+      setAllowlistPhone(payload.phoneE164);
+      setAllowlistStatus({
+        kind: "success",
+        message: `${payload.phoneE164} can now text Python to Pocket Code.`,
+      });
+    } catch {
+      setAllowlistStatus({
+        kind: "error",
+        message: "Network error. The allowlist endpoint did not respond.",
+      });
+    }
+  }
+
+  /**
    * Inserts a sample Python snippet into the compose box.
    * @param sample - Python code to preload.
    */
@@ -167,51 +230,86 @@ function DemoRoute(): ReactElement {
             </div>
           </div>
 
-          <div className="demo-phone-shell" aria-label="Interactive phone SMS demo">
-            <div className="demo-phone">
-              <div className="demo-island" />
-              <div className="demo-screen">
-                <div className="demo-status">
-                  <span>9:41</span>
-                  <span>LTE</span>
-                </div>
-                <div className="demo-contact">
-                  <div className="demo-avatar">PC</div>
-                  <div>
-                    <strong>Pocket Code</strong>
-                    <span>Text Python</span>
+          <div className="demo-device-column">
+            <div className="demo-phone-shell" aria-label="Interactive phone SMS demo">
+              <div className="demo-phone">
+                <div className="demo-island" />
+                <div className="demo-screen">
+                  <div className="demo-status">
+                    <span>9:41</span>
+                    <span>LTE</span>
                   </div>
-                </div>
-                <div className="demo-thread" ref={threadRef} aria-live="polite">
-                  <div className="demo-date">Today 9:41 AM</div>
-                  {messages.map((message) => (
-                    <div className={`demo-row demo-row-${message.tone}`} key={message.id}>
-                      <div
-                        className={`demo-bubble demo-bubble-${message.tone}${
-                          message.code || message.pending ? " demo-code" : ""
-                        }${message.pending ? " demo-pending" : ""}`}
-                      >
-                        {message.text}
-                      </div>
+                  <div className="demo-contact">
+                    <div className="demo-avatar">PC</div>
+                    <div>
+                      <strong>Pocket Code</strong>
+                      <span>Text Python</span>
                     </div>
-                  ))}
+                  </div>
+                  <div className="demo-thread" ref={threadRef} aria-live="polite">
+                    <div className="demo-date">Today 9:41 AM</div>
+                    {messages.map((message) => (
+                      <div className={`demo-row demo-row-${message.tone}`} key={message.id}>
+                        <div
+                          className={`demo-bubble demo-bubble-${message.tone}${
+                            message.code || message.pending ? " demo-code" : ""
+                          }${message.pending ? " demo-pending" : ""}`}
+                        >
+                          {message.text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <form className="demo-compose" onSubmit={handleSubmit}>
+                    <textarea
+                      aria-label="Python text message"
+                      disabled={isRunning}
+                      onChange={(event) => setDraft(event.target.value)}
+                      placeholder="Text Python code"
+                      rows={2}
+                      value={draft}
+                    />
+                    <button disabled={isRunning || !draft.trim()} type="submit">
+                      Send
+                    </button>
+                  </form>
+                  <div className="demo-homebar" />
                 </div>
-                <form className="demo-compose" onSubmit={handleSubmit}>
-                  <textarea
-                    aria-label="Python text message"
-                    disabled={isRunning}
-                    onChange={(event) => setDraft(event.target.value)}
-                    placeholder="Text Python code"
-                    rows={2}
-                    value={draft}
-                  />
-                  <button disabled={isRunning || !draft.trim()} type="submit">
-                    Send
-                  </button>
-                </form>
-                <div className="demo-homebar" />
               </div>
             </div>
+
+            <section className="demo-allowlist" aria-labelledby="demo-allowlist-title">
+              <div>
+                <p className="demo-allowlist-kicker">Live SMS access</p>
+                <h2 id="demo-allowlist-title">Add a phone to the pilot.</h2>
+                <p>
+                  Enter an E.164 number, then text the real SMS8 gateway with
+                  <code> py print("hello")</code>.
+                </p>
+              </div>
+              <form className="demo-allowlist-form" onSubmit={handleAllowlistSubmit}>
+                <label htmlFor="demo-allowlist-phone">Phone number</label>
+                <div className="demo-allowlist-row">
+                  <input
+                    autoComplete="tel"
+                    id="demo-allowlist-phone"
+                    inputMode="tel"
+                    onChange={(event) => setAllowlistPhone(event.target.value)}
+                    placeholder="+15555550123"
+                    value={allowlistPhone}
+                  />
+                  <button
+                    disabled={!allowlistPhone.trim() || allowlistStatus.kind === "submitting"}
+                    type="submit"
+                  >
+                    {allowlistStatus.kind === "submitting" ? "Adding" : "Allow"}
+                  </button>
+                </div>
+                <p className={`demo-allowlist-status demo-allowlist-status-${allowlistStatus.kind}`}>
+                  {allowlistStatus.message}
+                </p>
+              </form>
+            </section>
           </div>
         </section>
       </main>
@@ -270,7 +368,7 @@ body {
   color: #fff;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
   padding: 32px;
 }
 
@@ -364,6 +462,13 @@ body {
 .demo-phone-shell {
   display: flex;
   justify-content: center;
+}
+
+.demo-device-column {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 
 .demo-phone {
@@ -569,6 +674,114 @@ body {
   height: 5px;
   margin: 6px auto 9px;
   width: 110px;
+}
+
+.demo-allowlist {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06)),
+    rgba(17, 24, 39, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 28px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  color: #fff;
+  padding: 22px;
+  width: min(340px, 100%);
+}
+
+.demo-allowlist-kicker {
+  color: #ffd59e;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.demo-allowlist h2 {
+  font-size: 1.28rem;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  margin: 0 0 10px;
+}
+
+.demo-allowlist p {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.demo-allowlist code {
+  color: #ffd59e;
+  font: inherit;
+  font-weight: 700;
+}
+
+.demo-allowlist-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.demo-allowlist-form label {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.demo-allowlist-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+}
+
+.demo-allowlist-row input {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  color: #fff;
+  font: 0.78rem/1 "IBM Plex Mono", ui-monospace, monospace;
+  min-width: 0;
+  outline: none;
+  padding: 12px 13px;
+}
+
+.demo-allowlist-row input::placeholder {
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.demo-allowlist-row input:focus {
+  border-color: rgba(255, 213, 158, 0.56);
+  box-shadow: 0 0 0 3px rgba(224, 120, 2, 0.18);
+}
+
+.demo-allowlist-row button {
+  background: #ffd59e;
+  border: 0;
+  border-radius: 16px;
+  color: #111827;
+  cursor: pointer;
+  font: 700 0.72rem "IBM Plex Mono", ui-monospace, monospace;
+  padding: 0 14px;
+}
+
+.demo-allowlist-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.demo-allowlist-status {
+  color: rgba(255, 255, 255, 0.62);
+  min-height: 2.25em;
+}
+
+.demo-allowlist-status-success {
+  color: #a7f3d0;
+}
+
+.demo-allowlist-status-error {
+  color: #fecaca;
 }
 
 @media (max-width: 860px) {

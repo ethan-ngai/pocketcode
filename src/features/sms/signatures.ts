@@ -10,16 +10,17 @@ import type { Env } from "../../shared/env";
  * @param request - Original webhook request carrying SMS8's signature header.
  * @param env - Worker bindings containing the SMS8 API key and validation toggle.
  * @param messagesJson - Raw `messages` form value that SMS8 signed.
- * @returns True when the signature is valid or a local development bypass is explicitly enabled.
- * @remarks The bypass is intentionally constrained to local/dev contexts because
- * webhook handlers must fail closed once exposed to the public internet.
+ * @returns True when the signature is valid or webhook auth is explicitly disabled.
+ * @remarks SMS8 treats webhook API-key signing as optional, so production
+ * deployments can opt out with `SMS8_WEBHOOK_AUTH_ENABLED=false` while keeping
+ * signature checks enabled by default.
  */
 export async function validateSms8Request(
   request: Request,
   env: Env,
-  messagesJson: string,
+  messagesJson: string | readonly string[],
 ): Promise<boolean> {
-  if (isWebhookAuthBypassed(request, env)) {
+  if (isWebhookAuthBypassed(env)) {
     return true;
   }
 
@@ -30,8 +31,17 @@ export async function validateSms8Request(
     return false;
   }
 
-  const expected = await computeSms8Signature(messagesJson, env.SMS8_API_KEY);
-  return timingSafeEqual(signature, expected);
+  const candidates = Array.isArray(messagesJson) ? messagesJson : [messagesJson];
+
+  for (const candidate of candidates) {
+    const expected = await computeSms8Signature(candidate, env.SMS8_API_KEY);
+
+    if (timingSafeEqual(signature, expected)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -57,29 +67,13 @@ async function computeSms8Signature(messagesJson: string, apiKey: string): Promi
 
 /**
  * Checks whether signature validation may be skipped.
- * @param request - Request used to infer localhost development contexts.
  * @param env - Worker bindings containing the explicit auth toggle.
- * @returns True only for explicit false toggles in local or development environments.
- * @remarks This keeps local webhook tooling convenient without creating an
- * accidental production escape hatch through configuration alone.
+ * @returns True only when webhook authentication is explicitly disabled.
+ * @remarks SMS8 can omit webhook API-key signing entirely, but the app keeps
+ * authentication on unless operators intentionally set the toggle to false.
  */
-function isWebhookAuthBypassed(request: Request, env: Env): boolean {
-  if (env.SMS8_WEBHOOK_AUTH_ENABLED?.trim().toLowerCase() !== "false") {
-    return false;
-  }
-
-  const hostname = new URL(request.url).hostname.toLowerCase();
-  const environment = env.ENVIRONMENT?.trim().toLowerCase();
-
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname.endsWith(".local") ||
-    environment === "local" ||
-    environment === "development" ||
-    environment === "dev"
-  );
+function isWebhookAuthBypassed(env: Env): boolean {
+  return env.SMS8_WEBHOOK_AUTH_ENABLED?.trim().toLowerCase() === "false";
 }
 
 /**

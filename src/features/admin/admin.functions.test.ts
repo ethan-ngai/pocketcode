@@ -94,6 +94,7 @@ function createFailingDb(): Db {
 
   return {
     findOrCreateSmsIdentity: fail,
+    verifySmsIdentity: fail,
     findSmsMessageByProviderSid: fail,
     insertInboundSms: fail,
     insertOutboundSms: fail,

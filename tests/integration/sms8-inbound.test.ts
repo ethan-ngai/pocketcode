@@ -32,7 +32,11 @@ vi.mock("../../src/features/db/client", () => ({
 }));
 
 import type { Env } from "../../src/shared/env";
-import { handleSms8Inbound, type WaitUntil } from "../../src/features/sms/sms.functions";
+import {
+  handleDemoSmsAllowlist,
+  handleSms8Inbound,
+  type WaitUntil,
+} from "../../src/features/sms/sms.functions";
 import type { SmsDependencies } from "../../src/features/sms/sms.functions";
 import { runExecutionJob } from "../../src/features/repl/jobs";
 import { createInMemoryDb, type InMemoryDb } from "../helpers/in-memory-db";
@@ -72,6 +76,82 @@ describe("handleSms8Inbound", () => {
     expect(db.jobs).toHaveLength(1);
     expect(db.jobs[0]?.language).toBe("python");
     expect(db.messages.filter((message) => message.direction === "outbound")).toHaveLength(1);
+    expect(sentMessages).toEqual(["Output:\nhi"]);
+  });
+
+  it("accepts SMS8 JSON callbacks and sends execution results", async () => {
+    const db = createInMemoryDb();
+    const sentMessages: string[] = [];
+    const pending: Promise<unknown>[] = [];
+    const dependencies = createSmsDependencies(db, sentMessages);
+    const response = await handleSms8Inbound(
+      await signedInboundRequest("SM_JSON_1", 'py print("hi")', "json"),
+      env,
+      collectWaitUntil(pending),
+      dependencies,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("OK");
+    await Promise.all(pending);
+    expect(db.jobs).toHaveLength(1);
+    expect(sentMessages).toEqual(["Output:\nhi"]);
+  });
+
+  it("accepts JSON callbacks signed over the raw messages value", async () => {
+    const db = createInMemoryDb();
+    const sentMessages: string[] = [];
+    const pending: Promise<unknown>[] = [];
+    const dependencies = createSmsDependencies(db, sentMessages);
+    const response = await handleSms8Inbound(
+      await signedInboundRequest("SM_JSON_RAW_1", 'py print("hi")', "json_raw_messages"),
+      env,
+      collectWaitUntil(pending),
+      dependencies,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("OK");
+    await Promise.all(pending);
+    expect(db.jobs).toHaveLength(1);
+    expect(sentMessages).toEqual(["Output:\nhi"]);
+  });
+
+  it("accepts JSON callbacks where the body is the messages array", async () => {
+    const db = createInMemoryDb();
+    const sentMessages: string[] = [];
+    const pending: Promise<unknown>[] = [];
+    const dependencies = createSmsDependencies(db, sentMessages);
+    const response = await handleSms8Inbound(
+      await signedInboundRequest("SM_JSON_ARRAY_1", 'py print("hi")', "json_array"),
+      env,
+      collectWaitUntil(pending),
+      dependencies,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("OK");
+    await Promise.all(pending);
+    expect(db.jobs).toHaveLength(1);
+    expect(sentMessages).toEqual(["Output:\nhi"]);
+  });
+
+  it("accepts JSON callbacks where the body is one message object", async () => {
+    const db = createInMemoryDb();
+    const sentMessages: string[] = [];
+    const pending: Promise<unknown>[] = [];
+    const dependencies = createSmsDependencies(db, sentMessages);
+    const response = await handleSms8Inbound(
+      await signedInboundRequest("SM_JSON_OBJECT_1", 'py print("hi")', "json_object"),
+      env,
+      collectWaitUntil(pending),
+      dependencies,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("OK");
+    await Promise.all(pending);
+    expect(db.jobs).toHaveLength(1);
     expect(sentMessages).toEqual(["Output:\nhi"]);
   });
 
@@ -158,6 +238,59 @@ describe("handleSms8Inbound", () => {
     expect(db.jobs).toHaveLength(0);
     expect(sentMessages).toEqual(["This phone number is not enabled for the SMS pilot."]);
   });
+
+  it("allows production SMS execution for identities added through the demo allowlist", async () => {
+    const db = createInMemoryDb();
+    const pending: Promise<unknown>[] = [];
+    const sentMessages: string[] = [];
+    const allowlistResponse = await handleDemoSmsAllowlist(
+      jsonRequest("/api/demo/sms-allowlist", { phoneE164: "+15555550123" }),
+      env,
+      { db },
+    );
+
+    expect(allowlistResponse.status).toBe(200);
+    expect(await allowlistResponse.json()).toEqual({
+      allowed: true,
+      phoneE164: "+15555550123",
+    });
+
+    const response = await handleSms8Inbound(
+      await signedInboundRequest("SM_DYNAMIC_ALLOWED", 'py print("hi")'),
+      {
+        ...env,
+        ENVIRONMENT: "production",
+        SMS_ALLOWLIST: "+15555550124",
+      },
+      collectWaitUntil(pending),
+      createSmsDependencies(db, sentMessages),
+    );
+
+    expect(response.status).toBe(200);
+    await Promise.all(pending);
+    expect(db.jobs).toHaveLength(1);
+    expect(sentMessages).toEqual(["Output:\nhi"]);
+  });
+
+  it("accepts unsigned webhooks when SMS8 webhook auth is explicitly disabled", async () => {
+    const db = createInMemoryDb();
+    const sentMessages: string[] = [];
+    const pending: Promise<unknown>[] = [];
+    const response = await handleSms8Inbound(
+      await unsignedInboundRequest("SM_UNSIGNED", 'py print("hi")'),
+      {
+        ...env,
+        SMS8_WEBHOOK_AUTH_ENABLED: "false",
+      },
+      collectWaitUntil(pending),
+      createSmsDependencies(db, sentMessages),
+    );
+
+    expect(response.status).toBe(200);
+    await Promise.all(pending);
+    expect(db.jobs).toHaveLength(1);
+    expect(sentMessages).toEqual(["Output:\nhi"]);
+  });
 });
 
 describe("runExecutionJob", () => {
@@ -218,13 +351,117 @@ function collectWaitUntil(pending: Promise<unknown>[]): WaitUntil {
 }
 
 /**
+ * Builds a JSON request for feature handlers under test.
+ * @param path - Route path appended to the local test origin.
+ * @param body - JSON payload to serialize into the request.
+ * @returns Request carrying a JSON content type.
+ */
+function jsonRequest(path: string, body: unknown): Request {
+  return new Request(`http://localhost${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
  * Builds a signed SMS8 webhook request.
  * @param messageId - Provider message identifier used for idempotency.
  * @param body - Inbound SMS body delivered by SMS8.
  * @returns Request with a valid mocked SMS8 signature.
  */
-async function signedInboundRequest(messageId: string, body: string): Promise<Request> {
+async function signedInboundRequest(
+  messageId: string,
+  body: string,
+  contentType: "form" | "json" | "json_raw_messages" | "json_array" | "json_object" = "form",
+): Promise<Request> {
   const url = "http://localhost/api/sms8/inbound";
+  const messageRecords = [
+    {
+      ID: messageId,
+      number: "+15555550123",
+      message: body,
+      deviceID: "182",
+      simSlot: "0",
+      userID: "1",
+      status: "Received",
+      sentDate: "2026-04-25T12:00:00+00:00",
+      deliveredDate: "2026-04-25T12:00:01+00:00",
+      groupID: null,
+    },
+  ];
+  const messages = JSON.stringify(messageRecords);
+  const signature = await computeSms8Signature(messages, env.SMS8_API_KEY);
+
+  if (contentType === "json_object") {
+    const rawMessage = JSON.stringify(messageRecords[0]);
+    const rawSignature = await computeSms8Signature(rawMessage, env.SMS8_API_KEY);
+
+    return new Request(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-sg-signature": rawSignature,
+      },
+      body: rawMessage,
+    });
+  }
+
+  if (contentType === "json_array") {
+    return new Request(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-sg-signature": signature,
+      },
+      body: messages,
+    });
+  }
+
+  if (contentType === "json_raw_messages") {
+    const rawMessages = JSON.stringify(messageRecords, null, 2);
+    const rawSignature = await computeSms8Signature(rawMessages, env.SMS8_API_KEY);
+
+    return new Request(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-sg-signature": rawSignature,
+      },
+      body: `{\n  "messages": ${rawMessages}\n}`,
+    });
+  }
+
+  if (contentType === "json") {
+    return new Request(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-sg-signature": signature,
+      },
+      body: JSON.stringify({ messages: messageRecords }),
+    });
+  }
+
+  const form = new URLSearchParams({ messages });
+
+  return new Request(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      "x-sg-signature": signature,
+    },
+    body: form,
+  });
+}
+
+/**
+ * Builds an unsigned form webhook request for optional-auth deployments.
+ * @param messageId - Provider message identifier used for idempotency.
+ * @param body - Inbound SMS body delivered by SMS8.
+ * @returns Request without an SMS8 signature header.
+ */
+function unsignedInboundRequest(messageId: string, body: string): Request {
   const messages = JSON.stringify([
     {
       ID: messageId,
@@ -239,16 +476,13 @@ async function signedInboundRequest(messageId: string, body: string): Promise<Re
       groupID: null,
     },
   ]);
-  const form = new URLSearchParams({ messages });
-  const signature = await computeSms8Signature(messages, env.SMS8_API_KEY);
 
-  return new Request(url, {
+  return new Request("http://localhost/api/sms8/inbound", {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
-      "x-sg-signature": signature,
     },
-    body: form,
+    body: new URLSearchParams({ messages }),
   });
 }
 

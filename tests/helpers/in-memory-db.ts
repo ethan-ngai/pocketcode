@@ -74,6 +74,13 @@ export function createInMemoryDb(): InMemoryDb {
       return identity;
     },
 
+    async verifySmsIdentity(phoneE164) {
+      const identity = await this.findOrCreateSmsIdentity(phoneE164);
+      identity.isVerified = true;
+      identity.updatedAt = new Date();
+      return identity;
+    },
+
     async findSmsMessageByProviderSid(providerMessageSid) {
       return messages.find((message) => message.providerMessageSid === providerMessageSid) ?? null;
     },

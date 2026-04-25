@@ -113,6 +113,15 @@ export interface Db {
   findOrCreateSmsIdentity(phoneE164: string): Promise<SmsIdentity>;
 
   /**
+   * Marks a phone identity as verified for runtime SMS pilot access.
+   * @param phoneE164 - E.164 phone number submitted from an operator-facing surface.
+   * @returns Existing or newly created identity after verification is persisted.
+   * @remarks Dynamic allowlisting uses the identity row so Worker env bindings
+   * remain immutable and static `SMS_ALLOWLIST` can stay a deployment fallback.
+   */
+  verifySmsIdentity(phoneE164: string): Promise<SmsIdentity>;
+
+  /**
    * Looks up a provider message by id for idempotent webhook handling.
    * @param providerMessageSid - Provider message id reported by inbound or outbound APIs.
    * @returns Stored message row when this provider event has already been seen.
@@ -313,6 +322,24 @@ export function createDrizzleDb(db: DatabaseClient): Db {
       }
 
       return toSmsIdentity(existing[0]);
+    },
+
+    async verifySmsIdentity(phoneE164) {
+      const identity = await this.findOrCreateSmsIdentity(phoneE164);
+      const updated = await db
+        .update(schema.smsIdentities)
+        .set({
+          isVerified: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.smsIdentities.id, identity.id))
+        .returning();
+
+      if (!updated[0]) {
+        throw new Error("Failed to verify SMS identity");
+      }
+
+      return toSmsIdentity(updated[0]);
     },
 
     async findSmsMessageByProviderSid(providerMessageSid) {
