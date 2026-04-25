@@ -237,6 +237,16 @@ export function createDrizzleDb(db: DatabaseClient): Db {
       return toSmsIdentity(existing[0]);
     },
 
+    async findSmsMessageByProviderSid(providerMessageSid) {
+      const messages = await db
+        .select()
+        .from(schema.smsMessages)
+        .where(eq(schema.smsMessages.providerMessageSid, providerMessageSid))
+        .limit(1);
+
+      return messages[0] ? toSmsMessage(messages[0]) : null;
+    },
+
     async insertInboundSms(input) {
       const inserted = await db
         .insert(schema.smsMessages)
@@ -273,6 +283,59 @@ export function createDrizzleDb(db: DatabaseClient): Db {
       }
 
       return toSmsMessage(existing[0]);
+    },
+
+    async insertOutboundSms(input) {
+      const inserted = await db
+        .insert(schema.smsMessages)
+        .values({
+          id: createId("sms"),
+          direction: input.direction,
+          providerMessageSid: input.providerMessageSid,
+          phoneE164: input.phoneE164,
+          body: input.body,
+          status: input.status,
+          rawPayload: input.rawPayload,
+        })
+        .onConflictDoNothing({
+          target: schema.smsMessages.providerMessageSid,
+        })
+        .returning();
+
+      if (inserted[0]) {
+        return toSmsMessage(inserted[0]);
+      }
+
+      if (!input.providerMessageSid) {
+        throw new Error("Failed to insert outbound SMS message");
+      }
+
+      const existing = await db
+        .select()
+        .from(schema.smsMessages)
+        .where(eq(schema.smsMessages.providerMessageSid, input.providerMessageSid))
+        .limit(1);
+
+      if (!existing[0]) {
+        throw new Error("Failed to resolve duplicate outbound SMS message");
+      }
+
+      return toSmsMessage(existing[0]);
+    },
+
+    async updateSmsStatus(input) {
+      const updated = await db
+        .update(schema.smsMessages)
+        .set({
+          status: input.status,
+          rawPayload: input.rawPayload,
+        })
+        .where(eq(schema.smsMessages.providerMessageSid, input.providerMessageSid))
+        .returning({ id: schema.smsMessages.id });
+
+      if (!updated[0]) {
+        throw new Error(`SMS message ${input.providerMessageSid} does not exist`);
+      }
     },
 
     async createExecutionJob(input) {
@@ -382,6 +445,19 @@ export function createDrizzleDb(db: DatabaseClient): Db {
             lastActiveAt: new Date(),
           },
         });
+    },
+
+    async resetActiveSession(identityId) {
+      await db
+        .update(schema.replSessions)
+        .set({
+          status: "reset",
+          state: {},
+          lastActiveAt: new Date(),
+        })
+        .where(
+          and(eq(schema.replSessions.smsIdentityId, identityId), eq(schema.replSessions.status, "active")),
+        );
     },
   };
 }
