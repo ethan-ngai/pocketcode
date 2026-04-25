@@ -55,54 +55,117 @@ Create the minimal shared backbone for an SMS-based REPL that supports:
 
 ## Repository contract
 
+Use a feature-first structure. TanStack route files stay in `src/routes/**` because TanStack Router/Start expects file-based routes there, but route files must be thin and delegate to feature modules.
+
 Recommended layout:
 
 ```txt
 /
-  app/
+  src/
     routes/
+      __root.tsx
       index.tsx
       app/
+        route.tsx
+        admin/
+          index.tsx
+          messages.tsx
+          executions.tsx
+          users.tsx
       api/
         twilio.inbound.ts
         twilio.status.ts
         repl.execute.ts
         auth.$.ts
-  src/
-    auth/
-      auth.ts
-      better-auth-adapter.ts
-    db/
-      client.ts
-      schema.ts
-      migrations/
-    sms/
-      twilio.ts
-      parser.ts
-      responder.ts
-      signatures.ts
-    repl/
-      contract.ts
-      jobs.ts
-      sandbox-client.ts
-      languages/
-        python.ts
-        java.ts
+
+    features/
+      auth/
+        auth.ts
+        auth.functions.ts
+        auth.types.ts
+        require-admin.ts
+        current-user.ts
+        components/
+          AdminGuard.tsx
+
+      db/
+        client.ts
+        schema.ts
+        migrations/
+        seed.ts
+        db.types.ts
+
+      sms/
+        sms.functions.ts
+        sms.types.ts
+        parser.ts
+        responder.ts
+        signatures.ts
+        twilio.ts
+
+      repl/
+        repl.functions.ts
+        repl.types.ts
+        jobs.ts
+        sandbox-client.ts
+        languages/
+          python.ts
+          java.ts
+
+      admin/
+        admin.functions.ts
+        admin.types.ts
+        components/
+          ExecutionsTable.tsx
+          MessagesTable.tsx
+          UsersTable.tsx
+
+      observability/
+        logger.ts
+        logger.types.ts
+
+      security/
+        rate-limit.ts
+        quotas.ts
+        security.types.ts
+
     shared/
       env.ts
       errors.ts
       ids.ts
-      logger.ts
-  worker/
-    server.ts
+      result.ts
+      validation.ts
+
+    worker.ts
+
+  tests/
+    contract/
+    integration/
+
   wrangler.jsonc
   vite.config.ts
   package.json
 ```
 
+## File naming rules
+
+- Server functions must live in feature folders and use `*.functions.ts`.
+  - Examples: `src/features/sms/sms.functions.ts`, `src/features/repl/repl.functions.ts`, `src/features/admin/admin.functions.ts`.
+- Shared feature types must use `*.types.ts`.
+  - Examples: `src/features/repl/repl.types.ts`, `src/features/sms/sms.types.ts`.
+- TanStack route files should import feature functions/components. They should not contain DB queries, Twilio business logic, sandbox orchestration, or auth policy logic.
+- Keep cross-feature imports one-directional where possible:
+  - `routes -> features -> shared`
+  - feature-to-feature imports are allowed only through `*.types.ts` or public function exports.
+- Avoid `src/lib` as a dumping ground. Use `src/shared` only for truly generic utilities.
+
+## TanStack Start organization notes
+
+TanStack Start examples commonly keep file-based routes under `src/routes`. For this app, use `src/routes` as the routing shell and `src/features/<feature>` as the implementation boundary. Server functions should be called from route loaders/actions/components, but defined in feature-level `*.functions.ts` files so each workstream can own a separate folder.
+
 ## Shared TypeScript contracts
 
-Create `src/repl/contract.ts` first:
+Create `src/features/repl/repl.types.ts` first:
 
 ```ts
 export type ReplLanguage = "python" | "java";
@@ -178,14 +241,14 @@ Do not rename these without updating all workstreams.
 
 ## Merge-conflict rules
 
-- Only the starting-plan owner creates `src/repl/contract.ts`, `src/shared/env.ts`, and the route filenames.
+- Only the starting-plan owner creates `src/features/repl/repl.types.ts`, `src/shared/env.ts`, and the route filenames.
 - Each later workstream works inside its own directory:
-  - DB: `src/db/**`
-  - SMS: `src/sms/**` and Twilio route bodies
-  - Sandbox: `src/repl/sandbox-client.ts`, `src/repl/languages/**`
-  - Auth: `src/auth/**` and auth route
-  - UI: `app/routes/app/**`
-  - Observability/security: `src/shared/logger.ts`, `src/sms/signatures.ts`, tests
+  - DB: `src/features/db/**`
+  - SMS: `src/features/sms/**` and thin Twilio route wrappers in `src/routes/api/**`
+  - Sandbox/REPL: `src/features/repl/**`
+  - Auth: `src/features/auth/**` and thin auth route wrapper
+  - Admin UI: `src/features/admin/**` plus route wrappers in `src/routes/app/admin/**`
+  - Observability/security: `src/features/observability/**`, `src/features/security/**`, tests
 - Any cross-cutting changes must be proposed by adding a comment/TODO to this file first.
 
 ## MVP acceptance criteria

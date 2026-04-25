@@ -2,7 +2,7 @@
 
 ## Goal
 
-Let multiple people build in parallel with minimal merge conflicts.
+Let multiple people build in parallel with minimal merge conflicts using `src/features/<feature>` ownership boundaries.
 
 ## Phase 0: Required first
 
@@ -12,7 +12,8 @@ Only one person should own this.
 - Create base repo layout.
 - Create route stubs.
 - Create shared contracts:
-  - `src/repl/contract.ts`
+  - `src/features/repl/repl.types.ts`
+  - `src/features/sms/sms.types.ts`
   - `src/shared/env.ts`
   - `src/shared/ids.ts`
 - Add empty module placeholders for all workstreams.
@@ -29,49 +30,48 @@ Owns:
 ```txt
 vite.config.ts
 wrangler.jsonc
-worker/server.ts
+src/worker.ts
 package.json scripts
+src/routes/** route stubs only
 ```
 
-Avoid touching:
-
-```txt
-src/db/**
-src/sms/**
-src/repl/**
-src/auth/**
-```
+Avoid touching feature implementation folders except for placeholder files.
 
 ### Track B — Database
 
 Owns:
 
 ```txt
-src/db/**
+src/features/db/**
 ```
 
-Coordinates with auth owner on Better Auth table compatibility.
+Coordinates with auth owner on Better Auth table compatibility. Exports DB row/insert/select types from `src/features/db/db.types.ts`.
 
 ### Track C — SMS
 
 Owns:
 
 ```txt
-src/sms/**
-app/routes/api/twilio.inbound.ts
-app/routes/api/twilio.status.ts
+src/features/sms/**
+src/routes/api/twilio.inbound.ts thin wrapper
+src/routes/api/twilio.status.ts thin wrapper
 ```
 
-Only imports DB and REPL through stable interfaces.
+Only imports DB and REPL through stable feature interfaces. Main public entrypoint: `src/features/sms/sms.functions.ts`.
 
-### Track D — Sandbox
+### Track D — Sandbox / REPL
 
 Owns:
 
 ```txt
-src/repl/sandbox-client.ts
-src/repl/jobs.ts
-src/repl/languages/**
+src/features/repl/**
+```
+
+Public boundary:
+
+```txt
+src/features/repl/repl.functions.ts
+src/features/repl/repl.types.ts
 ```
 
 Does not touch Twilio route code except through exported job API.
@@ -81,9 +81,10 @@ Does not touch Twilio route code except through exported job API.
 Owns:
 
 ```txt
-src/auth/**
-app/routes/api/auth.$.ts
-app/routes/app/admin/**
+src/features/auth/**
+src/features/admin/**
+src/routes/api/auth.$.ts thin wrapper
+src/routes/app/admin/** route wrappers
 ```
 
 Does not alter SMS execution flow.
@@ -93,12 +94,26 @@ Does not alter SMS execution flow.
 Owns:
 
 ```txt
-src/shared/logger.ts
+src/features/observability/**
+src/features/security/**
 tests/**
 *.test.ts
 ```
 
 May add tests for other tracks but should avoid changing their production code without review.
+
+## Server function rule
+
+Every server function file must be named `*.functions.ts` and live inside a feature folder. Examples:
+
+```txt
+src/features/sms/sms.functions.ts
+src/features/repl/repl.functions.ts
+src/features/auth/auth.functions.ts
+src/features/admin/admin.functions.ts
+```
+
+Route files should import these functions. Do not define TanStack `createServerFn` handlers directly inside route files except as a temporary stub in Phase 0.
 
 ## Phase 2: Integration
 
@@ -118,58 +133,4 @@ Integration order:
 - Do not reformat the whole repo.
 - Do not rename shared files after Phase 0.
 - Do not inline other teams' modules into route handlers.
-- Use barrel exports only if they are stable.
-- Prefer adding new files over editing shared files.
-- Put TODOs in the owning file instead of modifying another owner’s module.
-
-## Cross-team contracts
-
-### SMS → REPL
-
-```ts
-await createAndRunExecutionJob({
-  phoneE164,
-  smsMessageId,
-  language,
-  code,
-});
-```
-
-### REPL → DB
-
-```ts
-await db.markExecutionRunning(jobId, sandboxId);
-await db.finishExecutionJob(jobId, result);
-```
-
-### REPL → SMS
-
-```ts
-await sendExecutionResultSms({
-  phoneE164,
-  jobId,
-  result,
-});
-```
-
-### Admin → DB
-
-Read-only queries first:
-
-```ts
-listRecentMessages()
-listRecentExecutionJobs()
-getExecutionJob(id)
-```
-
-## Definition of done for MVP
-
-- Deployed Worker receives a real Twilio SMS.
-- User can run Python.
-- User can run Java.
-- Results are texted back.
-- Execution history is persisted.
-- Admin can inspect failures.
-- Invalid webhook signatures are rejected.
-- Infinite loops time out.
-- Abuse limits exist.
+- Do not create generic `src/lib/**` folders. Put code in the owning feature or in `src/shared/**` only if it is genuinely feature-neutral.

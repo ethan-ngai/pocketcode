@@ -13,6 +13,20 @@ Auth/admin owner.
 
 Use Better Auth for web/admin authentication while keeping SMS identity separate and linkable.
 
+## Feature folder contract
+
+Own auth code under `src/features/auth/**`:
+
+```txt
+src/features/auth/auth.ts
+src/features/auth/auth.functions.ts
+src/features/auth/auth.types.ts
+src/features/auth/require-admin.ts
+src/features/auth/current-user.ts
+```
+
+`src/routes/api/auth.$.ts` should be a thin adapter to Better Auth. Admin route components should call `auth.functions.ts` or shared admin functions rather than importing Better Auth internals directly.
+
 ## Important distinction
 
 There are two identities:
@@ -33,8 +47,8 @@ There are two identities:
 Create:
 
 ```txt
-src/auth/auth.ts
-app/routes/api/auth.$.ts
+src/features/auth/auth.ts
+src/routes/api/auth.$.ts
 ```
 
 The auth route should delegate all `/api/auth/*` requests to Better Auth.
@@ -64,8 +78,8 @@ If adapter friction is high:
 Create:
 
 ```txt
-src/auth/require-admin.ts
-src/auth/current-user.ts
+src/features/auth/require-admin.ts
+src/features/auth/current-user.ts
 ```
 
 Export:

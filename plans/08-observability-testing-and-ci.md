@@ -15,12 +15,25 @@ QA/platform owner.
 
 Make the system testable without real Twilio messages or real user code execution on every test run.
 
+## Feature folder contract
+
+Logging and test helpers should not be scattered through unrelated features:
+
+```txt
+src/features/observability/logger.ts
+src/features/observability/logger.types.ts
+src/features/security/rate-limit.ts
+src/features/security/quotas.ts
+tests/contract/
+tests/integration/
+```
+
 ## Logging
 
 Create:
 
 ```txt
-src/shared/logger.ts
+src/features/observability/logger.ts
 ```
 
 Log structured events:
@@ -53,10 +66,10 @@ Never log:
 
 ### Unit tests
 
-- `src/sms/parser.test.ts`
-- `src/sms/responder.test.ts`
-- `src/repl/languages/java.test.ts`
-- `src/repl/languages/python.test.ts`
+- `src/features/sms/parser.test.ts`
+- `src/features/sms/responder.test.ts`
+- `src/features/repl/languages/java.test.ts`
+- `src/features/repl/languages/python.test.ts`
 - `src/shared/env.test.ts`
 
 Parser cases:

@@ -14,6 +14,21 @@ Sandbox/execution owner.
 
 Execute untrusted Python and Java code in isolated Cloudflare Sandboxes and return normalized execution results.
 
+## Feature folder contract
+
+Own execution code under `src/features/repl/**`:
+
+```txt
+src/features/repl/repl.functions.ts
+src/features/repl/repl.types.ts
+src/features/repl/jobs.ts
+src/features/repl/sandbox-client.ts
+src/features/repl/languages/python.ts
+src/features/repl/languages/java.ts
+```
+
+`repl.functions.ts` is the public server-function boundary. `repl.types.ts` owns `ReplLanguage`, `ExecutionRequest`, `ExecutionResult`, and job status types.
+
 ## Runtime model
 
 MVP should use one-shot execution:
@@ -41,7 +56,7 @@ And `wrangler.jsonc` will need the relevant Durable Object/container configurati
 Create:
 
 ```txt
-src/repl/sandbox-client.ts
+src/features/repl/sandbox-client.ts
 ```
 
 Export:
@@ -94,7 +109,7 @@ Adjust exact API calls to the current Sandbox SDK.
 Create:
 
 ```txt
-src/repl/languages/python.ts
+src/features/repl/languages/python.ts
 ```
 
 Execution plan:
@@ -121,7 +136,7 @@ Rejected patterns for MVP:
 Create:
 
 ```txt
-src/repl/languages/java.ts
+src/features/repl/languages/java.ts
 ```
 
 MVP input style:
@@ -180,7 +195,7 @@ Add app-level limits:
 Execution function should be wrapped by a job service:
 
 ```txt
-src/repl/jobs.ts
+src/features/repl/jobs.ts
 ```
 
 Flow:

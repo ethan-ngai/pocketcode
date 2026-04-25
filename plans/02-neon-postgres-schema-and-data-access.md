@@ -13,6 +13,20 @@ Database/backend owner.
 
 Create the durable data model for SMS identity, messages, execution jobs, outputs, sessions, and audit logs.
 
+## Feature folder contract
+
+Own all database code under `src/features/db/**`:
+
+```txt
+src/features/db/client.ts
+src/features/db/schema.ts
+src/features/db/db.types.ts
+src/features/db/migrations/
+src/features/db/seed.ts
+```
+
+`db.types.ts` should export DB-facing row/insert/select types that other features may import. Do not expose raw migration internals through other feature folders.
+
 ## Recommended access layer
 
 Use one of:
@@ -152,7 +166,7 @@ create table audit_events (
 
 ## Data access API
 
-Create `src/db/client.ts`:
+Create `src/features/db/client.ts`:
 
 ```ts
 export interface Db {
@@ -170,10 +184,10 @@ Keep this API stable so the SMS and sandbox teams can work without touching sche
 
 ## Migration workflow
 
-- Use generated SQL migrations committed to `src/db/migrations`.
+- Use generated SQL migrations committed to `src/features/db/migrations`.
 - Never edit a migration after it has been applied to shared dev/prod.
 - Use Neon branches for PR testing.
-- Add seed data only in `src/db/seed.ts`.
+- Add seed data only in `src/features/db/seed.ts`.
 
 ## Acceptance criteria
 

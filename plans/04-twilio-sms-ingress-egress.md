@@ -14,6 +14,21 @@ SMS integration owner.
 
 Receive inbound SMS, parse commands, create execution jobs, and send results back through Twilio.
 
+## Feature folder contract
+
+Own SMS code under `src/features/sms/**`:
+
+```txt
+src/features/sms/sms.functions.ts
+src/features/sms/sms.types.ts
+src/features/sms/parser.ts
+src/features/sms/responder.ts
+src/features/sms/signatures.ts
+src/features/sms/twilio.ts
+```
+
+`src/routes/api/twilio.inbound.ts` and `src/routes/api/twilio.status.ts` should stay thin. They validate HTTP shape, call `sms.functions.ts`, and return the response.
+
 ## Inbound route
 
 Path:
@@ -43,7 +58,7 @@ Responsibilities:
 Create:
 
 ```txt
-src/sms/signatures.ts
+src/features/sms/signatures.ts
 ```
 
 Export:
@@ -69,7 +84,7 @@ and current environment is local/dev.
 Create:
 
 ```txt
-src/sms/parser.ts
+src/features/sms/parser.ts
 ```
 
 Rules:
@@ -128,7 +143,7 @@ Responsibilities:
 Create:
 
 ```txt
-src/sms/twilio.ts
+src/features/sms/twilio.ts
 ```
 
 Export:
@@ -152,7 +167,7 @@ Implementation detail:
 Create:
 
 ```txt
-src/sms/responder.ts
+src/features/sms/responder.ts
 ```
 
 Rules:

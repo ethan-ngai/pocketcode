@@ -15,6 +15,22 @@ Product/API owner.
 
 Define exactly how users interact with the SMS REPL and how state changes over time.
 
+## Feature folder contract
+
+Product flow logic should live in feature modules, not route files:
+
+```txt
+src/features/sms/parser.ts
+src/features/sms/responder.ts
+src/features/sms/sms.functions.ts
+src/features/repl/repl.functions.ts
+src/features/repl/repl.types.ts
+src/features/admin/admin.functions.ts
+src/features/admin/components/
+```
+
+The admin pages under `src/routes/app/admin/**` should mostly compose components from `src/features/admin/components/**`.
+
 ## MVP user flows
 
 ### First message

@@ -72,17 +72,17 @@ Add Hyperdrive/Sandbox/Durable Object bindings later when those workstreams are 
 Create empty or stub handlers:
 
 ```txt
-app/routes/api/twilio.inbound.ts
-app/routes/api/twilio.status.ts
-app/routes/api/repl.execute.ts
-app/routes/api/auth.$.ts
+src/routes/api/twilio.inbound.ts
+src/routes/api/twilio.status.ts
+src/routes/api/repl.execute.ts
+src/routes/api/auth.$.ts
 ```
 
 Each stub should return `501 Not Implemented` until the owner workstream fills it in.
 
 ### 4. Add a custom server entrypoint only if needed
 
-Use the default TanStack Start server entrypoint unless Durable Objects, Queues, Cron, or Sandbox exports require a custom `worker/server.ts`.
+Use the default TanStack Start server entrypoint unless Durable Objects, Queues, Cron, or Sandbox exports require a custom `src/worker.ts`.
 
 Likely final need:
 
@@ -109,6 +109,23 @@ export default {
   }
 }
 ```
+
+### 3.5. Create feature folders before implementation
+
+Create empty folders and placeholder barrel/comment files only where needed:
+
+```txt
+src/features/auth/
+src/features/db/
+src/features/sms/
+src/features/repl/
+src/features/admin/
+src/features/observability/
+src/features/security/
+src/shared/
+```
+
+Do not put implementation logic in route files. Route files call feature-level `*.functions.ts` exports or render feature components.
 
 ## Local dev checklist
 

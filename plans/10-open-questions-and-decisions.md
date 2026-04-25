@@ -41,4 +41,5 @@ Add dated decisions here:
 ```txt
 2026-04-25 — Decision: MVP uses one-shot execution, not persistent REPL state.
 2026-04-25 — Decision: Default language is Python.
+2026-04-25 — Decision: Feature-first repository convention uses `src/features/<feature>`, `*.functions.ts` for server functions, and `*.types.ts` for shared feature types.
 ```
