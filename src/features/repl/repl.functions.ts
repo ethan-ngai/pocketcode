@@ -73,8 +73,11 @@ export async function handleManualExecution(request: Request, env: Env): Promise
       code: validation.code,
       timeoutMs:
         parsePositiveInteger(body.timeoutMs) ??
-        (validation.language === "java" ? DEFAULT_JAVA_EXECUTION_TIMEOUT_MS : DEFAULT_EXECUTION_TIMEOUT_MS),
-      maxOutputChars: parsePositiveInteger(body.maxOutputChars) ?? DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
+        (validation.language === "java"
+          ? DEFAULT_JAVA_EXECUTION_TIMEOUT_MS
+          : DEFAULT_EXECUTION_TIMEOUT_MS),
+      maxOutputChars:
+        parsePositiveInteger(body.maxOutputChars) ?? DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
     },
     env,
   );

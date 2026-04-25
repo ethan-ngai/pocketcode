@@ -74,6 +74,14 @@ export interface AdminIdentityUsageView {
   defaultLanguage: string;
   /** Number of execution jobs associated with the identity. */
   executionCount: number;
+  /** Hourly execution budget currently applied to the phone number. */
+  hourlyLimit: number;
+  /** Daily execution budget currently applied to the phone number. */
+  dailyLimit: number;
+  /** Whether the phone number is blocked before sandbox dispatch. */
+  disabled: boolean;
+  /** Support-facing note attached to the quota override. */
+  quotaReason: string | null;
   /** Last active timestamp serialized for client rendering. */
   lastActiveAt: string | null;
 }

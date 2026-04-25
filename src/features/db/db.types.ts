@@ -12,6 +12,7 @@ import type {
   replSessions,
   smsIdentities,
   smsMessages,
+  smsQuotas,
   users,
 } from "./schema";
 
@@ -57,6 +58,33 @@ export interface SmsIdentity {
  * stay behind the higher-level `Db` methods.
  */
 export type InsertSmsIdentity = typeof smsIdentities.$inferInsert;
+
+/**
+ * SMS quota row shared by security and admin features.
+ * @remarks Phone-keyed quotas let support disable abuse quickly without needing
+ * the sender to have a web account or verified Better Auth identity.
+ */
+export interface SmsQuota {
+  /** E.164 phone number whose execution policy is overridden. */
+  phoneE164: string;
+  /** Maximum execution jobs accepted within a rolling hour. */
+  hourlyLimit: number;
+  /** Maximum execution jobs accepted within a rolling day. */
+  dailyLimit: number;
+  /** Whether execution commands from this number are refused before job creation. */
+  disabled: boolean;
+  /** Support-facing explanation for a quota override or disable action. */
+  reason: string | null;
+  /** Last update timestamp. */
+  updatedAt: Date;
+}
+
+/**
+ * SMS quota insert payload.
+ * @remarks Security and admin code should normally use the DB boundary so
+ * defaults remain aligned with the application policy constants.
+ */
+export type InsertSmsQuota = typeof smsQuotas.$inferInsert;
 
 /**
  * SMS message row shared by ingress, egress, and admin views.
@@ -172,6 +200,14 @@ export interface SmsIdentityUsage {
   defaultLanguage: ReplLanguage;
   /** Number of execution jobs owned by this identity. */
   executionCount: number;
+  /** Effective hourly execution limit shown to admins. */
+  hourlyLimit: number;
+  /** Effective daily execution limit shown to admins. */
+  dailyLimit: number;
+  /** Whether this phone number is blocked from creating new jobs. */
+  disabled: boolean;
+  /** Support-facing quota note when one has been configured. */
+  quotaReason: string | null;
   /** Most recent session activity when available. */
   lastActiveAt: Date | null;
 }

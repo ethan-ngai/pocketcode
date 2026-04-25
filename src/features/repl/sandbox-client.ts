@@ -9,7 +9,12 @@ import type { Env } from "../../shared/env";
 import { SMS_MAX_SOURCE_CHARS } from "../sms/sms.types";
 import { runJavaCommand } from "./languages/java";
 import { runPythonCommand } from "./languages/python";
-import type { ExecutionRequest, ExecutionResult, SandboxCommandResult, SandboxRuntime } from "./repl.types";
+import type {
+  ExecutionRequest,
+  ExecutionResult,
+  SandboxCommandResult,
+  SandboxRuntime,
+} from "./repl.types";
 
 /**
  * Executes code in the configured sandbox runtime.
@@ -67,7 +72,11 @@ export async function executeInSandbox(
       exitCode: result.exitCode,
       durationMs: Date.now() - started,
       sandboxId: request.id,
-      errorCode: result.timedOut ? "EXECUTION_TIMEOUT" : result.exitCode === 0 ? undefined : "PROCESS_EXIT_NONZERO",
+      errorCode: result.timedOut
+        ? "EXECUTION_TIMEOUT"
+        : result.exitCode === 0
+          ? undefined
+          : "PROCESS_EXIT_NONZERO",
     };
   } catch (error) {
     return {
@@ -158,7 +167,7 @@ function hasJavaRejectedPattern(code: string): boolean {
  * @returns Output capped to the requested budget.
  */
 function clampOutput(value: string, maxChars: number): string {
-  const normalized = value.replace(/\0/g, "");
+  const normalized = value.split(String.fromCharCode(0)).join("");
 
   if (normalized.length <= maxChars) {
     return normalized;
@@ -172,7 +181,9 @@ function clampOutput(value: string, maxChars: number): string {
  * @param sandbox - Job-scoped sandbox runtime.
  * @returns Promise that resolves after cleanup is attempted.
  */
-async function destroySandbox(sandbox: SandboxRuntime & { destroy?: () => Promise<void> }): Promise<void> {
+async function destroySandbox(
+  sandbox: SandboxRuntime & { destroy?: () => Promise<void> },
+): Promise<void> {
   try {
     await sandbox.destroy?.();
   } catch {

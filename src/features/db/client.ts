@@ -16,6 +16,7 @@ import type {
   SmsIdentity,
   SmsIdentityUsage,
   SmsMessage,
+  SmsQuota,
 } from "./db.types";
 import * as schema from "./schema";
 
@@ -78,6 +79,24 @@ export interface CreateExecutionJobInput {
   timeoutMs: number;
   /** Output budget captured at enqueue time. */
   maxOutputChars: number;
+}
+
+/**
+ * Input for support-owned SMS quota changes.
+ * @remarks Limits are optional so admin actions can disable a number without
+ * unintentionally changing its execution budget.
+ */
+export interface UpsertSmsQuotaInput {
+  /** E.164 phone number used as the quota key. */
+  phoneE164: string;
+  /** Hourly execution limit when overriding the default policy. */
+  hourlyLimit?: number;
+  /** Daily execution limit when overriding the default policy. */
+  dailyLimit?: number;
+  /** Whether the number is blocked before sandbox job creation. */
+  disabled?: boolean;
+  /** Support-facing note explaining the current override. */
+  reason?: string | null;
 }
 
 /**
@@ -182,6 +201,20 @@ export interface Db {
    * @returns Number of execution jobs created in the requested window.
    */
   countExecutionsForPhone(phoneE164: string, since: Date): Promise<number>;
+
+  /**
+   * Reads a per-phone SMS quota override.
+   * @param phoneE164 - Sender phone number already normalized to E.164.
+   * @returns Quota override row or null when defaults apply.
+   */
+  getSmsQuota(phoneE164: string): Promise<SmsQuota | null>;
+
+  /**
+   * Creates or updates a per-phone SMS quota override.
+   * @param input - Support-owned quota or disable action.
+   * @returns Stored quota row after defaults and updates are applied.
+   */
+  upsertSmsQuota(input: UpsertSmsQuotaInput): Promise<SmsQuota>;
 
   /**
    * Lists recent provider SMS events for admin inspection.
@@ -571,6 +604,53 @@ export function createDrizzleDb(db: DatabaseClient): Db {
       return Number(rows[0]?.value ?? 0);
     },
 
+    async getSmsQuota(phoneE164) {
+      const rows = await db
+        .select()
+        .from(schema.smsQuotas)
+        .where(eq(schema.smsQuotas.phoneE164, phoneE164))
+        .limit(1);
+
+      return rows[0] ? toSmsQuota(rows[0]) : null;
+    },
+
+    async upsertSmsQuota(input) {
+      const inserted = await db
+        .insert(schema.smsQuotas)
+        .values({
+          phoneE164: input.phoneE164,
+          hourlyLimit: input.hourlyLimit,
+          dailyLimit: input.dailyLimit,
+          disabled: input.disabled,
+          reason: input.reason,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: schema.smsQuotas.phoneE164,
+          set: {
+            hourlyLimit:
+              input.hourlyLimit === undefined
+                ? sql`${schema.smsQuotas.hourlyLimit}`
+                : input.hourlyLimit,
+            dailyLimit:
+              input.dailyLimit === undefined
+                ? sql`${schema.smsQuotas.dailyLimit}`
+                : input.dailyLimit,
+            disabled:
+              input.disabled === undefined ? sql`${schema.smsQuotas.disabled}` : input.disabled,
+            reason: input.reason === undefined ? sql`${schema.smsQuotas.reason}` : input.reason,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      if (!inserted[0]) {
+        throw new Error("Failed to upsert SMS quota");
+      }
+
+      return toSmsQuota(inserted[0]);
+    },
+
     async listRecentSmsMessages(limit) {
       const messages = await db
         .select()
@@ -608,10 +688,15 @@ export function createDrizzleDb(db: DatabaseClient): Db {
           id: schema.smsIdentities.id,
           phoneE164: schema.smsIdentities.phoneE164,
           defaultLanguage: schema.smsIdentities.defaultLanguage,
+          hourlyLimit: sql<number>`coalesce(${schema.smsQuotas.hourlyLimit}, 20)`,
+          dailyLimit: sql<number>`coalesce(${schema.smsQuotas.dailyLimit}, 100)`,
+          disabled: sql<boolean>`coalesce(${schema.smsQuotas.disabled}, false)`,
+          quotaReason: schema.smsQuotas.reason,
           executionCount: count(schema.executionJobs.id),
           lastActiveAt: sql<Date | null>`max(${schema.replSessions.lastActiveAt})`,
         })
         .from(schema.smsIdentities)
+        .leftJoin(schema.smsQuotas, eq(schema.smsQuotas.phoneE164, schema.smsIdentities.phoneE164))
         .leftJoin(
           schema.executionJobs,
           eq(schema.executionJobs.smsIdentityId, schema.smsIdentities.id),
@@ -624,6 +709,10 @@ export function createDrizzleDb(db: DatabaseClient): Db {
           schema.smsIdentities.id,
           schema.smsIdentities.phoneE164,
           schema.smsIdentities.defaultLanguage,
+          schema.smsQuotas.hourlyLimit,
+          schema.smsQuotas.dailyLimit,
+          schema.smsQuotas.disabled,
+          schema.smsQuotas.reason,
         )
         .orderBy(desc(count(schema.executionJobs.id)))
         .limit(limit);
@@ -632,6 +721,10 @@ export function createDrizzleDb(db: DatabaseClient): Db {
         ...row,
         defaultLanguage: row.defaultLanguage as ReplLanguage,
         executionCount: Number(row.executionCount),
+        hourlyLimit: Number(row.hourlyLimit),
+        dailyLimit: Number(row.dailyLimit),
+        disabled: Boolean(row.disabled),
+        quotaReason: row.quotaReason,
       }));
     },
   };
@@ -684,6 +777,17 @@ function toSmsMessage(row: typeof schema.smsMessages.$inferSelect): SmsMessage {
     direction: row.direction as SmsMessage["direction"],
     provider: row.provider as SmsMessage["provider"],
   };
+}
+
+/**
+ * Maps an ORM quota row to the stable feature contract.
+ * @param row - Drizzle-selected SMS quota row.
+ * @returns Domain-level SMS quota.
+ * @remarks Keeping this mapping here lets security code depend on one contract
+ * while migration defaults remain table-owned.
+ */
+function toSmsQuota(row: typeof schema.smsQuotas.$inferSelect): SmsQuota {
+  return row;
 }
 
 /**

@@ -87,7 +87,8 @@ function indentSnippet(code: string): string {
  */
 function commandErrorToResult(error: unknown, timeoutMs: number): SandboxCommandResult {
   const message = error instanceof Error ? error.message : String(error);
-  const timedOut = message.toLowerCase().includes("timeout") || message.toLowerCase().includes("timed out");
+  const timedOut =
+    message.toLowerCase().includes("timeout") || message.toLowerCase().includes("timed out");
 
   return {
     stdout: "",

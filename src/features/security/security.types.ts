@@ -14,4 +14,8 @@ export interface RateLimitDecision {
   allowed: boolean;
   /** Seconds until retry when the request is denied. */
   retryAfterSeconds: number | null;
+  /** Stable reason used by logs and admin tools. */
+  reason: "allowed" | "disabled" | "hourly_limit" | "daily_limit";
+  /** User-facing refusal copy when the request is denied. */
+  message: string | null;
 }

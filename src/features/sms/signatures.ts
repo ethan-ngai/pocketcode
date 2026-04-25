@@ -7,7 +7,7 @@ import type { Env } from "../../shared/env";
 
 /**
  * Validates Twilio's HMAC-SHA1 request signature.
- * @param request - Original webhook request so URL and signature header match Twilio's base string.
+ * @param request - Original webhook request carrying path, query, and signature header.
  * @param env - Worker bindings containing the Twilio auth token and validation toggle.
  * @param parsedBody - Form body parsed before business logic trusts provider fields.
  * @returns True when the signature is valid or a local development bypass is explicitly enabled.
@@ -29,7 +29,11 @@ export async function validateTwilioRequest(
     return false;
   }
 
-  const expected = await computeTwilioSignature(request.url, parsedBody, env.TWILIO_AUTH_TOKEN);
+  const expected = await computeTwilioSignature(
+    getPublicValidationUrl(request, env),
+    parsedBody,
+    env.TWILIO_AUTH_TOKEN,
+  );
   return timingSafeEqual(signature, expected);
 }
 
@@ -88,6 +92,25 @@ function isWebhookAuthBypassed(request: Request, env: Env): boolean {
     environment === "development" ||
     environment === "dev"
   );
+}
+
+/**
+ * Resolves the public URL Twilio used for signature generation.
+ * @param request - Worker request whose path and query are preserved.
+ * @param env - Worker bindings containing the configured public app origin.
+ * @returns Absolute URL used as the signature base.
+ * @remarks Workers may see internal preview hosts, so production validation
+ * anchors on `APP_BASE_URL` while preserving Twilio's requested path and query.
+ */
+function getPublicValidationUrl(request: Request, env: Env): string {
+  const publicBaseUrl = env.APP_BASE_URL?.trim();
+
+  if (!publicBaseUrl) {
+    return request.url;
+  }
+
+  const requestedUrl = new URL(request.url);
+  return new URL(`${requestedUrl.pathname}${requestedUrl.search}`, publicBaseUrl).toString();
 }
 
 /**

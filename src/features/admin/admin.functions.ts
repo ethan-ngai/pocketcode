@@ -141,6 +141,10 @@ function toAdminIdentityUsageView(usage: SmsIdentityUsage): AdminIdentityUsageVi
     maskedPhoneE164: maskPhone(usage.phoneE164),
     defaultLanguage: usage.defaultLanguage,
     executionCount: usage.executionCount,
+    hourlyLimit: usage.hourlyLimit,
+    dailyLimit: usage.dailyLimit,
+    disabled: usage.disabled,
+    quotaReason: usage.quotaReason,
     lastActiveAt: usage.lastActiveAt?.toISOString() ?? null,
   };
 }

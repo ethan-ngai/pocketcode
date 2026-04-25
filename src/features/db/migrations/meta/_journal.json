@@ -15,6 +15,13 @@
       "when": 1777138108965,
       "tag": "0001_lonely_king_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777139153510,
+      "tag": "0002_abandoned_steve_rogers",
+      "breakpoints": true
     }
   ]
 }

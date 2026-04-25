@@ -32,6 +32,8 @@ export function UsersTable({ users }: UsersTableProps): React.ReactElement {
           <th>Phone</th>
           <th>Default language</th>
           <th>Executions</th>
+          <th>Quota</th>
+          <th>Status</th>
           <th>Last active</th>
         </tr>
       </thead>
@@ -41,12 +43,25 @@ export function UsersTable({ users }: UsersTableProps): React.ReactElement {
             <td>{user.maskedPhoneE164}</td>
             <td>{user.defaultLanguage}</td>
             <td>{user.executionCount}</td>
+            <td>
+              {user.hourlyLimit}/hr, {user.dailyLimit}/day
+            </td>
+            <td>{user.disabled ? `Disabled${formatReason(user.quotaReason)}` : "Active"}</td>
             <td>{user.lastActiveAt ? formatDate(user.lastActiveAt) : ""}</td>
           </tr>
         ))}
       </tbody>
     </table>
   );
+}
+
+/**
+ * Formats quota notes without creating an empty status suffix.
+ * @param reason - Optional support note from the quota row.
+ * @returns Short display suffix for disabled identities.
+ */
+function formatReason(reason: string | null): string {
+  return reason ? `: ${reason}` : "";
 }
 
 /**

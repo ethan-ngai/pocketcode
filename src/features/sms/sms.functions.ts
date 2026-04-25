@@ -14,9 +14,8 @@ import {
   DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
   DEFAULT_EXECUTION_TIMEOUT_MS,
   DEFAULT_JAVA_EXECUTION_TIMEOUT_MS,
-  DEFAULT_SMS_EXECUTIONS_PER_DAY,
-  DEFAULT_SMS_EXECUTIONS_PER_HOUR,
 } from "../security/quotas";
+import { checkSmsExecutionRateLimit } from "../security/rate-limit";
 import { parseSmsCommand } from "./parser";
 import { createTwiMlResponse, formatExecutionSmsMessages, SMS_HELP_TEXT } from "./responder";
 import { validateTwilioRequest } from "./signatures";
@@ -63,6 +62,7 @@ export async function handleTwilioInbound(
     const parsedBody = await parseWebhookForm(request);
 
     if (!(await validateTwilioRequest(request, env, parsedBody))) {
+      logTwilioSignatureFailure(request, parsedBody);
       return new Response("Invalid Twilio signature", { status: 403 });
     }
 
@@ -124,6 +124,7 @@ export async function handleTwilioStatus(
     const parsedBody = await parseWebhookForm(request);
 
     if (!(await validateTwilioRequest(request, env, parsedBody))) {
+      logTwilioSignatureFailure(request, parsedBody);
       return new Response("Invalid Twilio signature", { status: 403 });
     }
 
@@ -177,10 +178,16 @@ async function dispatchInboundCommand(input: {
       await input.db.upsertSessionLanguage(input.identity.id, input.command.language);
       return twimlResponse(`Default language set to ${formatLanguage(input.command.language)}.`);
     case "execute": {
-      const quotaMessage = await getQuotaRefusalMessage(input.db, input.identity.phoneE164);
+      const limitDecision = await checkSmsExecutionRateLimit(input.db, input.identity.phoneE164);
 
-      if (quotaMessage) {
-        return twimlResponse(quotaMessage);
+      if (!limitDecision.allowed) {
+        log("info", "SMS execution refused by security policy", {
+          phoneHash: hashLogValue(input.identity.phoneE164),
+          reason: limitDecision.reason,
+          retryAfterSeconds: limitDecision.retryAfterSeconds,
+        });
+
+        return twimlResponse(limitDecision.message ?? "Execution limit reached.");
       }
 
       const job = await input.db.createExecutionJob({
@@ -408,34 +415,6 @@ function getExecutionTimeoutMs(env: Env, language: ReplLanguage): number {
 }
 
 /**
- * Checks product-level execution limits before creating a job.
- * @param db - Database boundary that can count persisted execution jobs.
- * @param phoneE164 - Sender phone number associated with the SMS identity.
- * @returns User-facing refusal text when a limit is exceeded, otherwise null.
- * @remarks Persisted counts keep duplicate webhook retries idempotent because
- * the duplicate check happens before this function is called.
- */
-async function getQuotaRefusalMessage(db: Db, phoneE164: string): Promise<string | null> {
-  const now = Date.now();
-  const hourlyCount = await db.countExecutionsForPhone(phoneE164, new Date(now - 60 * 60 * 1_000));
-
-  if (hourlyCount >= DEFAULT_SMS_EXECUTIONS_PER_HOUR) {
-    return "Hourly limit reached. Try again later.";
-  }
-
-  const dailyCount = await db.countExecutionsForPhone(
-    phoneE164,
-    new Date(now - 24 * 60 * 60 * 1_000),
-  );
-
-  if (dailyCount >= DEFAULT_SMS_EXECUTIONS_PER_DAY) {
-    return "Daily limit reached. Try again tomorrow.";
-  }
-
-  return null;
-}
-
-/**
  * Builds the public status callback URL when the app origin is configured.
  * @param env - Worker bindings containing the public app base URL.
  * @returns Absolute status callback URL or undefined.
@@ -453,6 +432,41 @@ function defaultWaitUntil(promise: Promise<unknown>): void {
   promise.catch((error) => {
     log("error", "Background SMS task failed", { error: errorToLog(error) });
   });
+}
+
+/**
+ * Logs a rejected Twilio webhook without persisting provider body content.
+ * @param request - Request that failed signature validation.
+ * @param parsedBody - Parsed form used only for low-cardinality metadata.
+ * @remarks Forged webhooks are expected during probing, so the log keeps enough
+ * context for triage without storing SMS text or raw payloads.
+ */
+function logTwilioSignatureFailure(request: Request, parsedBody: URLSearchParams): void {
+  log("warn", "Rejected Twilio webhook signature", {
+    path: new URL(request.url).pathname,
+    hasSignature: request.headers.has("x-twilio-signature"),
+    providerMessageSidHash: hashLogValue(parsedBody.get("MessageSid")),
+    fromHash: hashLogValue(parsedBody.get("From")),
+  });
+}
+
+/**
+ * Produces a short redacted fingerprint for security logs.
+ * @param value - Provider or phone identifier that should not be written in full.
+ * @returns Short hash string or null when the value is absent.
+ */
+function hashLogValue(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  let hash = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+
+  return Math.abs(hash).toString(16);
 }
 
 /**

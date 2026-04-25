@@ -124,6 +124,20 @@ export const smsIdentities = pgTable("sms_identities", {
 });
 
 /**
+ * Per-phone execution quota overrides and abuse blocks.
+ * @remarks Quotas are keyed by phone number rather than identity id so support
+ * actions continue to apply if an identity row is recreated during recovery.
+ */
+export const smsQuotas = pgTable("sms_quotas", {
+  phoneE164: text("phone_e164").primaryKey(),
+  hourlyLimit: integer("hourly_limit").notNull().default(20),
+  dailyLimit: integer("daily_limit").notNull().default(100),
+  disabled: boolean("disabled").notNull().default(false),
+  reason: text("reason"),
+  updatedAt: timestamp("updated_at", timestampTz).notNull().defaultNow(),
+});
+
+/**
  * Provider SMS event log.
  * @remarks Twilio callbacks may be retried, so provider SID uniqueness gives
  * ingress code an idempotent persistence boundary.
@@ -258,6 +272,7 @@ export const TABLE_NAMES = [
   "account",
   "verification",
   "sms_identities",
+  "sms_quotas",
   "sms_messages",
   "execution_jobs",
   "execution_outputs",
