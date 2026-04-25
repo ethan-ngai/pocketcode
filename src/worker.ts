@@ -1,12 +1,17 @@
 /**
  * @file worker.ts
- * @description Optional Cloudflare Worker entrypoint reserved for platform exports.
+ * @description Cloudflare Worker entrypoint with Sandbox container export.
  * @module platform
  */
+import startEntry from "@tanstack/react-start/server-entry";
+
+export { Sandbox } from "@cloudflare/sandbox";
 
 /**
- * Worker readiness marker.
- * @remarks The default TanStack Start server entrypoint remains authoritative
- * until Sandbox, queues, or Durable Objects require custom Worker exports.
+ * Delegates normal HTTP traffic to TanStack Start.
+ * @remarks The custom entrypoint exists so Wrangler can see the Sandbox Durable
+ * Object class export while preserving TanStack Start's generated request path.
  */
-export const workerEntrypointReady = false;
+export default {
+  fetch: startEntry.fetch,
+};

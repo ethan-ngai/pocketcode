@@ -33,7 +33,7 @@ export interface RunExecutionJobInput {
  * REPL orchestration does not need Twilio credentials or provider types.
  */
 export async function runExecutionJob(input: RunExecutionJobInput): Promise<ExecutionResult> {
-  await input.db.markExecutionRunning(input.job.id);
+  await input.db.markExecutionRunning(input.job.id, input.job.id);
 
   const result = await executeInSandbox(
     {

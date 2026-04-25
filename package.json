@@ -11,6 +11,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@cloudflare/sandbox": "^0.9.0",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "drizzle-orm": "^0.45.2",

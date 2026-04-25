@@ -3,6 +3,7 @@
  * @description Typed Cloudflare binding and configuration access for request handlers.
  * @module shared
  */
+import type { Sandbox } from "@cloudflare/sandbox";
 
 /**
  * Minimal Hyperdrive binding shape needed by the first data-access workstream.
@@ -20,6 +21,8 @@ export interface HyperdriveBinding {
  * instead of importing process-level globals that do not exist on Workers.
  */
 export interface Env {
+  /** Durable Object namespace used by Cloudflare Sandbox containers. */
+  Sandbox?: DurableObjectNamespace<Sandbox>;
   /** Direct Neon connection string for local development or fallback access. */
   DATABASE_URL?: string;
   /** Preferred pooled database binding for deployed Workers. */

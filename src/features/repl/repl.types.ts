@@ -79,3 +79,56 @@ export interface ExecutionResult {
   /** Stable machine-readable failure reason for retry and admin UX. */
   errorCode?: string;
 }
+
+/**
+ * Minimal command result returned by language-specific sandbox adapters.
+ * @remarks The Cloudflare SDK exposes more metadata, but the REPL feature only
+ * needs process output and exit state to maintain its stable public contract.
+ */
+export interface SandboxCommandResult {
+  /** Captured standard output. */
+  stdout: string;
+  /** Captured standard error. */
+  stderr: string;
+  /** Process exit code reported by the sandbox command runner. */
+  exitCode: number | null;
+  /** Whether the command exceeded its timeout budget. */
+  timedOut: boolean;
+}
+
+/**
+ * Small subset of Sandbox SDK methods used by one-shot language adapters.
+ * @remarks Keeping adapters on this interface makes them testable without
+ * importing the full Durable Object-backed SDK in unit tests.
+ */
+export interface SandboxRuntime {
+  /**
+   * Creates a directory inside the sandbox filesystem.
+   * @param path - Absolute path isolated for the current execution job.
+   * @param options - Directory creation options supported by the SDK.
+   * @returns Promise that resolves once the directory exists.
+   */
+  mkdir(path: string, options?: { recursive?: boolean }): Promise<unknown>;
+  /**
+   * Writes source text into the sandbox filesystem.
+   * @param path - Absolute path where the file should be written.
+   * @param content - Source code or wrapper text.
+   * @returns Promise that resolves once the file is written.
+   */
+  writeFile(path: string, content: string): Promise<unknown>;
+  /**
+   * Executes a fixed command inside the sandbox.
+   * @param command - Shell command controlled by the REPL adapter.
+   * @param options - Working directory and timeout policy for one execution.
+   * @returns Captured process output from the SDK.
+   */
+  exec(
+    command: string,
+    options?: { cwd?: string; timeout?: number; env?: Record<string, string | undefined> },
+  ): Promise<{
+    success: boolean;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+  }>;
+}

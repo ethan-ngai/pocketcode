@@ -4,7 +4,9 @@
  * @module routes
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { env } from "cloudflare:workers";
 import { handleManualExecution } from "../../features/repl/repl.functions";
+import type { Env } from "../../shared/env";
 
 /**
  * Manual execution route definition.
@@ -14,7 +16,7 @@ import { handleManualExecution } from "../../features/repl/repl.functions";
 export const Route = createFileRoute("/api/repl/execute")({
   server: {
     handlers: {
-      POST: () => handleManualExecution(),
+      POST: ({ request }) => handleManualExecution(request, env as Env),
     },
   },
 });
