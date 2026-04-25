@@ -38,6 +38,8 @@ export interface Env {
   TWILIO_FROM_NUMBER?: string;
   /** Enables Twilio request signature validation for ingress routes. */
   TWILIO_WEBHOOK_AUTH_ENABLED?: string;
+  /** Deployment environment name used for local-only safety bypasses. */
+  ENVIRONMENT?: string;
   /** Public app origin used for callbacks and admin links. */
   APP_BASE_URL: string;
   /** Default sandbox timeout for single-shot execution. */

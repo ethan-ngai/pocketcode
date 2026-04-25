@@ -4,21 +4,65 @@
  * @module sms
  */
 import { SMS_OUTPUT_CHUNK_CHARS } from "./sms.types";
+import type { ExecutionResult } from "../repl/repl.types";
+
+/** Maximum result messages sent for one execution in the MVP. */
+const SMS_OUTPUT_MAX_CHUNKS = 2;
+
+/** Help text intentionally stays terse for low-bandwidth SMS users. */
+export const SMS_HELP_TEXT = "Commands:\npy <code>\njava <code>\nlang py\nlang java\nreset";
 
 /**
  * Splits output into SMS-safe chunks with a truncation notice.
  * @param output - Full combined output intended for a user.
- * @returns One or more chunks under the configured SMS size budget.
- * @remarks MVP output sends only the first payload-sized chunk, but returning an
- * array preserves room for later multi-message delivery without changing callers.
+ * @param prefix - User-visible prefix that should appear only on the first chunk.
+ * @returns One or two chunks under the configured SMS size budget.
+ * @remarks The full execution output is stored before formatting; this helper
+ * only enforces the limited SMS preview policy from the Twilio MVP.
  */
-export function formatSmsOutput(output: string): string[] {
-  if (output.length <= SMS_OUTPUT_CHUNK_CHARS) {
-    return [output || "(no output)"];
+export function formatSmsOutput(output: string, prefix = ""): string[] {
+  const source = output || "(no output)";
+  const chunks: string[] = [];
+  let remaining = source;
+
+  while (remaining && chunks.length < SMS_OUTPUT_MAX_CHUNKS) {
+    const currentPrefix = chunks.length === 0 ? prefix : "";
+    const availableChars = SMS_OUTPUT_CHUNK_CHARS - currentPrefix.length;
+    const slice = remaining.slice(0, availableChars);
+
+    chunks.push(`${currentPrefix}${slice}`);
+    remaining = remaining.slice(slice.length);
   }
 
-  const notice = "\n...[truncated]";
-  return [`${output.slice(0, SMS_OUTPUT_CHUNK_CHARS - notice.length)}${notice}`];
+  if (remaining && chunks.length > 0) {
+    const notice = "\n...[truncated]";
+    const lastIndex = chunks.length - 1;
+    chunks[lastIndex] = `${chunks[lastIndex].slice(0, SMS_OUTPUT_CHUNK_CHARS - notice.length)}${notice}`;
+  }
+
+  return chunks.length > 0 ? chunks : [`${prefix}(no output)`];
+}
+
+/**
+ * Formats a sandbox result for outbound SMS delivery.
+ * @param result - Terminal execution result already persisted by the job layer.
+ * @returns SMS chunks ready to send through Twilio.
+ * @remarks The prefix rules intentionally trade detail for quick comprehension
+ * on small phone screens while admin views retain the full stdout/stderr split.
+ */
+export function formatExecutionSmsMessages(result: ExecutionResult): string[] {
+  if (result.status === "timed_out") {
+    return ["Timed out after 5s."];
+  }
+
+  if (result.stderr && !result.stdout) {
+    return formatSmsOutput(result.stderr, "Error:\n");
+  }
+
+  const output =
+    result.stderr && result.stdout ? `${result.stdout.trimEnd()}\n${result.stderr}` : result.stdout;
+
+  return formatSmsOutput(output, "✅ Output:\n");
 }
 
 /**

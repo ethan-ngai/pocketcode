@@ -15,12 +15,12 @@ const LANGUAGE_ALIASES: Record<string, ReplLanguage> = {
 /**
  * Parses an SMS body into a command understood by the execution workflow.
  * @param body - Raw SMS body provided by Twilio.
- * @param defaultLanguage - Sender language preference used for bare code.
+ * @param defaultLanguage - Sender language preference used for bare code, defaulting to Python when unset.
  * @returns Parsed command or an unknown reason safe for SMS responses.
  * @remarks The MVP is single-shot execution, so bare messages execute in the
  * sender's default language while explicit prefixes override that preference.
  */
-export function parseSmsCommand(body: string, defaultLanguage: ReplLanguage): SmsCommand {
+export function parseSmsCommand(body: string, defaultLanguage: ReplLanguage | null = "python"): SmsCommand {
   const trimmed = body.trim();
 
   if (!trimmed) {
@@ -59,7 +59,7 @@ export function parseSmsCommand(body: string, defaultLanguage: ReplLanguage): Sm
 
   return {
     kind: "execute",
-    language: explicitLanguage ?? defaultLanguage,
+    language: explicitLanguage ?? defaultLanguage ?? "python",
     code,
   };
 }

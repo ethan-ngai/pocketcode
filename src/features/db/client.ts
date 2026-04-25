@@ -27,6 +27,20 @@ export interface InsertSmsMessage {
 }
 
 /**
+ * Input required to update a provider SMS delivery callback.
+ * @remarks Status callbacks may arrive before or after local outbound
+ * persistence, so provider SID remains the stable correlation key.
+ */
+export interface UpdateSmsStatusInput {
+  /** Provider message SID reported by Twilio callbacks. */
+  providerMessageSid: string;
+  /** Delivery lifecycle value reported by the provider. */
+  status: string;
+  /** Raw provider callback retained for debugging and audits. */
+  rawPayload: unknown;
+}
+
+/**
  * Input required to create a queued execution job.
  * @remarks SMS and admin callers share this shape so sandbox orchestration does
  * not need to know which user surface created the job.
@@ -82,11 +96,32 @@ export interface Db {
   findOrCreateSmsIdentity(phoneE164: string): Promise<SmsIdentity>;
 
   /**
+   * Looks up a provider message by SID for idempotent webhook handling.
+   * @param providerMessageSid - Twilio `MessageSid` or outbound `MessageStatus` callback SID.
+   * @returns Stored message row when this provider event has already been seen.
+   */
+  findSmsMessageByProviderSid(providerMessageSid: string): Promise<SmsMessage | null>;
+
+  /**
    * Persists a provider SMS event.
    * @param input - Normalized message payload from the SMS feature.
    * @returns Stored message row.
    */
   insertInboundSms(input: InsertSmsMessage): Promise<SmsMessage>;
+
+  /**
+   * Persists an outbound provider SMS event.
+   * @param input - Normalized outbound message payload from the SMS feature.
+   * @returns Stored outbound message row.
+   */
+  insertOutboundSms(input: InsertSmsMessage): Promise<SmsMessage>;
+
+  /**
+   * Updates delivery status for a provider message.
+   * @param input - Provider callback fields keyed by message SID.
+   * @returns Promise that resolves once the status callback is persisted.
+   */
+  updateSmsStatus(input: UpdateSmsStatusInput): Promise<void>;
 
   /**
    * Creates an execution job in the queued state.
@@ -125,4 +160,11 @@ export interface Db {
    * @returns Promise that resolves when the session state is persisted.
    */
   upsertSessionLanguage(identityId: string, language: ReplLanguage): Promise<void>;
+
+  /**
+   * Clears active session state for an SMS identity.
+   * @param identityId - SMS identity id selected by the sender phone number.
+   * @returns Promise that resolves once active state has been reset.
+   */
+  resetActiveSession(identityId: string): Promise<void>;
 }

@@ -4,7 +4,9 @@
  * @module routes
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { env, waitUntil } from "cloudflare:workers";
 import { handleTwilioInbound } from "../../features/sms/sms.functions";
+import type { Env } from "../../shared/env";
 
 /**
  * Twilio inbound route definition.
@@ -14,7 +16,7 @@ import { handleTwilioInbound } from "../../features/sms/sms.functions";
 export const Route = createFileRoute("/api/twilio/inbound")({
   server: {
     handlers: {
-      POST: () => handleTwilioInbound(),
+      POST: ({ request }) => handleTwilioInbound(request, env as Env, waitUntil),
     },
   },
 });
