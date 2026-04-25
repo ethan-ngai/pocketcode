@@ -159,6 +159,24 @@ export interface ExecutionJob {
 }
 
 /**
+ * Aggregated SMS identity usage shown on admin pages.
+ * @remarks This keeps dashboard metrics behind the DB feature instead of making
+ * admin components know how execution jobs join to phone identities.
+ */
+export interface SmsIdentityUsage {
+  /** SMS identity primary key. */
+  id: string;
+  /** Phone number associated with the identity. */
+  phoneE164: string;
+  /** Runtime used for prefix-free SMS commands. */
+  defaultLanguage: ReplLanguage;
+  /** Number of execution jobs owned by this identity. */
+  executionCount: number;
+  /** Most recent session activity when available. */
+  lastActiveAt: Date | null;
+}
+
+/**
  * Execution job insert payload.
  * @remarks Job writers should prefer `Db.createExecutionJob`, while tests may
  * need the precise ORM insert type for direct setup.

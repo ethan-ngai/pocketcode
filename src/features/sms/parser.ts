@@ -24,7 +24,7 @@ export function parseSmsCommand(body: string, defaultLanguage: ReplLanguage | nu
   const trimmed = body.trim();
 
   if (!trimmed) {
-    return { kind: "unknown", reason: "Message body is empty." };
+    return { kind: "unknown", reason: "Unknown command. Text HELP for examples." };
   }
 
   const [command, ...rest] = trimmed.split(/\s+/);
@@ -43,18 +43,18 @@ export function parseSmsCommand(body: string, defaultLanguage: ReplLanguage | nu
     const language = LANGUAGE_ALIASES[remainder.toLowerCase()];
     return language
       ? { kind: "set_language", language }
-      : { kind: "unknown", reason: "Use lang py or lang java." };
+      : { kind: "unknown", reason: "Unknown command. Text HELP for examples." };
   }
 
   const explicitLanguage = LANGUAGE_ALIASES[commandLower];
   const code = explicitLanguage ? remainder : trimmed;
 
   if (!code) {
-    return { kind: "unknown", reason: "Send code after py or java." };
+    return { kind: "unknown", reason: "Unknown command. Text HELP for examples." };
   }
 
   if (code.length > SMS_MAX_SOURCE_CHARS) {
-    return { kind: "unknown", reason: `Code is limited to ${SMS_MAX_SOURCE_CHARS} characters.` };
+    return { kind: "unknown", reason: `Code is too long. Limit: ${SMS_MAX_SOURCE_CHARS} characters.` };
   }
 
   return {

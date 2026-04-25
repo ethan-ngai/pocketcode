@@ -4,6 +4,7 @@
  * @module routes
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { getAdminExecutions } from "../../../features/admin/admin.functions";
 import { ExecutionsTable } from "../../../features/admin/components/ExecutionsTable";
 import { AdminGuard } from "../../../features/auth/components/AdminGuard";
 
@@ -13,6 +14,7 @@ import { AdminGuard } from "../../../features/auth/components/AdminGuard";
  * can coordinate through feature functions instead.
  */
 export const Route = createFileRoute("/app/admin/executions")({
+  loader: () => getAdminExecutions(),
   component: ExecutionsRoute,
 });
 
@@ -21,9 +23,11 @@ export const Route = createFileRoute("/app/admin/executions")({
  * @returns Guarded executions table placeholder.
  */
 function ExecutionsRoute(): React.ReactElement {
+  const executions = Route.useLoaderData();
+
   return (
     <AdminGuard>
-      <ExecutionsTable />
+      <ExecutionsTable executions={executions} />
     </AdminGuard>
   );
 }

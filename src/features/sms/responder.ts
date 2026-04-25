@@ -12,6 +12,10 @@ const SMS_OUTPUT_MAX_CHUNKS = 2;
 /** Help text intentionally stays terse for low-bandwidth SMS users. */
 export const SMS_HELP_TEXT = "Commands:\npy <code>\njava <code>\nlang py\nlang java\nreset";
 
+const ANSI_ESCAPE_PATTERN =
+  // eslint-disable-next-line no-control-regex
+  /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+
 /**
  * Splits output into SMS-safe chunks with a truncation notice.
  * @param output - Full combined output intended for a user.
@@ -21,7 +25,7 @@ export const SMS_HELP_TEXT = "Commands:\npy <code>\njava <code>\nlang py\nlang j
  * only enforces the limited SMS preview policy from the Twilio MVP.
  */
 export function formatSmsOutput(output: string, prefix = ""): string[] {
-  const source = output || "(no output)";
+  const source = sanitizeSmsText(output) || "(no output)";
   const chunks: string[] = [];
   let remaining = source;
 
@@ -62,7 +66,24 @@ export function formatExecutionSmsMessages(result: ExecutionResult): string[] {
   const output =
     result.stderr && result.stdout ? `${result.stdout.trimEnd()}\n${result.stderr}` : result.stdout;
 
-  return formatSmsOutput(output, "✅ Output:\n");
+  return formatSmsOutput(output, "Output:\n");
+}
+
+/**
+ * Normalizes execution text for unpredictable SMS clients.
+ * @param value - Raw stdout, stderr, or combined output from the sandbox.
+ * @returns Text with ANSI escapes removed, newlines normalized, and trailing whitespace trimmed.
+ * @remarks The database keeps raw streams; SMS delivery gets conservative text
+ * so phones do not render escape codes, Markdown, or ragged trailing spaces.
+ */
+export function sanitizeSmsText(value: string): string {
+  return value
+    .replace(ANSI_ESCAPE_PATTERN, "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trimEnd();
 }
 
 /**

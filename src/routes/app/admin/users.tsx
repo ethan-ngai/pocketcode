@@ -4,6 +4,7 @@
  * @module routes
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { getAdminIdentityUsage } from "../../../features/admin/admin.functions";
 import { UsersTable } from "../../../features/admin/components/UsersTable";
 import { AdminGuard } from "../../../features/auth/components/AdminGuard";
 
@@ -13,6 +14,7 @@ import { AdminGuard } from "../../../features/auth/components/AdminGuard";
  * a stable UI location for that workstream.
  */
 export const Route = createFileRoute("/app/admin/users")({
+  loader: () => getAdminIdentityUsage(),
   component: UsersRoute,
 });
 
@@ -21,9 +23,11 @@ export const Route = createFileRoute("/app/admin/users")({
  * @returns Guarded users table placeholder.
  */
 function UsersRoute(): React.ReactElement {
+  const users = Route.useLoaderData();
+
   return (
     <AdminGuard>
-      <UsersTable />
+      <UsersTable users={users} />
     </AdminGuard>
   );
 }

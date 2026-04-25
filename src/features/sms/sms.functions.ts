@@ -10,6 +10,13 @@ import type { ExecutionResult, ReplLanguage, SmsCommand } from "../repl/repl.typ
 import type { Env } from "../../shared/env";
 import { isLikelyE164 } from "../../shared/validation";
 import { log } from "../observability/logger";
+import {
+  DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
+  DEFAULT_EXECUTION_TIMEOUT_MS,
+  DEFAULT_JAVA_EXECUTION_TIMEOUT_MS,
+  DEFAULT_SMS_EXECUTIONS_PER_DAY,
+  DEFAULT_SMS_EXECUTIONS_PER_HOUR,
+} from "../security/quotas";
 import { parseSmsCommand } from "./parser";
 import { createTwiMlResponse, formatExecutionSmsMessages, SMS_HELP_TEXT } from "./responder";
 import { validateTwilioRequest } from "./signatures";
@@ -80,10 +87,12 @@ export async function handleTwilioInbound(
     });
     const identity = await db.findOrCreateSmsIdentity(inbound.fromE164);
     const session = await db.getActiveSession(identity.id);
-    const command = parseSmsCommand(inbound.body, session?.language ?? identity.defaultLanguage);
+    const currentDefaultLanguage = session?.language ?? identity.defaultLanguage;
+    const command = parseSmsCommand(inbound.body, currentDefaultLanguage);
 
     return await dispatchInboundCommand({
       command,
+      currentDefaultLanguage,
       db,
       dependencies,
       env,
@@ -148,6 +157,7 @@ export async function handleTwilioStatus(
  */
 async function dispatchInboundCommand(input: {
   command: SmsCommand;
+  currentDefaultLanguage: ReplLanguage;
   db: Db;
   dependencies: SmsDependencies;
   env: Env;
@@ -167,15 +177,25 @@ async function dispatchInboundCommand(input: {
       await input.db.upsertSessionLanguage(input.identity.id, input.command.language);
       return twimlResponse(`Default language set to ${formatLanguage(input.command.language)}.`);
     case "execute": {
+      const quotaMessage = await getQuotaRefusalMessage(input.db, input.identity.phoneE164);
+
+      if (quotaMessage) {
+        return twimlResponse(quotaMessage);
+      }
+
       const job = await input.db.createExecutionJob({
         smsMessageId: input.message.id,
         smsIdentityId: input.identity.id,
         language: input.command.language,
         code: input.command.code,
-        timeoutMs: parsePositiveInteger(input.env.EXECUTION_TIMEOUT_MS, 5_000),
-        maxOutputChars: parsePositiveInteger(input.env.EXECUTION_MAX_OUTPUT_CHARS, 4_000),
+        timeoutMs: getExecutionTimeoutMs(input.env, input.command.language),
+        maxOutputChars: parsePositiveInteger(
+          input.env.EXECUTION_MAX_OUTPUT_CHARS,
+          DEFAULT_EXECUTION_MAX_OUTPUT_CHARS,
+        ),
       });
 
+      await input.db.recordSessionExecution(input.identity.id, input.currentDefaultLanguage, job.id);
       input.waitUntil(sendExecutionResultSms({ ...input, job }));
       return twimlResponse("Running code...");
     }
@@ -366,6 +386,46 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Selects the per-language execution timeout for SMS jobs.
+ * @param env - Worker bindings that may override the default execution budget.
+ * @param language - Runtime selected by parser or user session state.
+ * @returns Timeout in milliseconds captured on the execution job.
+ * @remarks Java gets a slightly longer MVP default for compile startup while
+ * explicit environment configuration still wins for all runtimes.
+ */
+function getExecutionTimeoutMs(env: Env, language: ReplLanguage): number {
+  return parsePositiveInteger(
+    env.EXECUTION_TIMEOUT_MS,
+    language === "java" ? DEFAULT_JAVA_EXECUTION_TIMEOUT_MS : DEFAULT_EXECUTION_TIMEOUT_MS,
+  );
+}
+
+/**
+ * Checks product-level execution limits before creating a job.
+ * @param db - Database boundary that can count persisted execution jobs.
+ * @param phoneE164 - Sender phone number associated with the SMS identity.
+ * @returns User-facing refusal text when a limit is exceeded, otherwise null.
+ * @remarks Persisted counts keep duplicate webhook retries idempotent because
+ * the duplicate check happens before this function is called.
+ */
+async function getQuotaRefusalMessage(db: Db, phoneE164: string): Promise<string | null> {
+  const now = Date.now();
+  const hourlyCount = await db.countExecutionsForPhone(phoneE164, new Date(now - 60 * 60 * 1_000));
+
+  if (hourlyCount >= DEFAULT_SMS_EXECUTIONS_PER_HOUR) {
+    return "Hourly limit reached. Try again later.";
+  }
+
+  const dailyCount = await db.countExecutionsForPhone(phoneE164, new Date(now - 24 * 60 * 60 * 1_000));
+
+  if (dailyCount >= DEFAULT_SMS_EXECUTIONS_PER_DAY) {
+    return "Daily limit reached. Try again tomorrow.";
+  }
+
+  return null;
 }
 
 /**

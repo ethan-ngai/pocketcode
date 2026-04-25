@@ -1,15 +1,60 @@
 /**
  * @file UsersTable.tsx
- * @description Placeholder users table for the admin dashboard.
+ * @description SMS identity usage table for the admin dashboard.
  * @module admin
  */
+import type { AdminIdentityUsageView } from "../admin.types";
 
 /**
- * Renders the users table placeholder.
- * @returns Placeholder admin content.
- * @remarks User administration depends on Better Auth schema decisions, so Phase
- * 0 exposes only the UI boundary.
+ * Props for the phone usage admin table.
+ * @remarks The route is named users for the product surface, but the MVP shows
+ * SMS identities until Better Auth linkage owns richer user records.
  */
-export function UsersTable(): React.ReactElement {
-  return <p>Users are not implemented yet.</p>;
+export interface UsersTableProps {
+  /** SMS identities ranked by execution usage. */
+  users: AdminIdentityUsageView[];
+}
+
+/**
+ * Renders the SMS identity usage admin table.
+ * @param props - Display-ready identity usage rows from the admin feature boundary.
+ * @returns Phone usage table.
+ */
+export function UsersTable({ users }: UsersTableProps): React.ReactElement {
+  if (users.length === 0) {
+    return <p>No SMS users yet.</p>;
+  }
+
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Phone</th>
+          <th>Default language</th>
+          <th>Executions</th>
+          <th>Last active</th>
+        </tr>
+      </thead>
+      <tbody>
+        {users.map((user) => (
+          <tr key={user.id}>
+            <td>{user.maskedPhoneE164}</td>
+            <td>{user.defaultLanguage}</td>
+            <td>{user.executionCount}</td>
+            <td>{user.lastActiveAt ? formatDate(user.lastActiveAt) : ""}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * Formats ISO timestamps for compact admin tables.
+ * @param value - ISO timestamp from a server function.
+ * @returns Locale string when parseable, otherwise the original value.
+ */
+function formatDate(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }

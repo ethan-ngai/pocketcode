@@ -3,14 +3,14 @@
  * @description Database access boundary consumed by SMS and REPL features.
  * @module db
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, gte, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-import type { ExecutionResult, ReplLanguage } from "../repl/repl.types";
+import type { ExecutionResult, ExecutionStatus, ReplLanguage } from "../repl/repl.types";
 import { createId } from "../../shared/ids";
 import type { AppConfig } from "../../shared/env";
-import type { ExecutionJob, ReplSession, SmsIdentity, SmsMessage } from "./db.types";
+import type { ExecutionJob, ReplSession, SmsIdentity, SmsIdentityUsage, SmsMessage } from "./db.types";
 import * as schema from "./schema";
 
 /**
@@ -154,11 +154,50 @@ export interface Db {
   upsertSessionLanguage(identityId: string, language: ReplLanguage): Promise<void>;
 
   /**
+   * Records the newest execution in active SMS session state.
+   * @param identityId - SMS identity id selected by the sender phone number.
+   * @param language - Runtime used for the execution.
+   * @param jobId - Execution job id to expose as last activity.
+   * @returns Promise that resolves once session state has been updated.
+   */
+  recordSessionExecution(identityId: string, language: ReplLanguage, jobId: string): Promise<void>;
+
+  /**
    * Clears active session state for an SMS identity.
    * @param identityId - SMS identity id selected by the sender phone number.
    * @returns Promise that resolves once active state has been reset.
    */
   resetActiveSession(identityId: string): Promise<void>;
+
+  /**
+   * Counts executions for a phone number since a point in time.
+   * @param phoneE164 - Sender phone number already normalized to E.164.
+   * @param since - Inclusive lower bound used for hourly or daily windows.
+   * @returns Number of execution jobs created in the requested window.
+   */
+  countExecutionsForPhone(phoneE164: string, since: Date): Promise<number>;
+
+  /**
+   * Lists recent provider SMS events for admin inspection.
+   * @param limit - Maximum number of rows to return.
+   * @returns Messages ordered by creation time descending.
+   */
+  listRecentSmsMessages(limit: number): Promise<SmsMessage[]>;
+
+  /**
+   * Lists recent execution jobs for admin inspection.
+   * @param limit - Maximum number of rows to return.
+   * @param status - Optional lifecycle status filter, used for failed-job views.
+   * @returns Execution jobs ordered by creation time descending.
+   */
+  listRecentExecutionJobs(limit: number, status?: ExecutionStatus): Promise<ExecutionJob[]>;
+
+  /**
+   * Lists phone identities ordered by execution usage.
+   * @param limit - Maximum number of rows to return.
+   * @returns Usage aggregates for dashboard ranking.
+   */
+  listSmsIdentityUsage(limit: number): Promise<SmsIdentityUsage[]>;
 }
 
 /**
@@ -427,6 +466,8 @@ export function createDrizzleDb(db: DatabaseClient): Db {
     },
 
     async upsertSessionLanguage(identityId, language) {
+      const now = new Date();
+
       await db
         .insert(schema.replSessions)
         .values({
@@ -434,15 +475,54 @@ export function createDrizzleDb(db: DatabaseClient): Db {
           smsIdentityId: identityId,
           language,
           status: "active",
-          state: {},
-          lastActiveAt: new Date(),
+          state: {
+            defaultLanguage: language,
+            lastActiveAt: now.toISOString(),
+          },
+          lastActiveAt: now,
         })
         .onConflictDoUpdate({
           target: schema.replSessions.smsIdentityId,
           targetWhere: eq(schema.replSessions.status, "active"),
           set: {
             language,
-            lastActiveAt: new Date(),
+            state: {
+              defaultLanguage: language,
+              lastActiveAt: now.toISOString(),
+            },
+            lastActiveAt: now,
+          },
+        });
+    },
+
+    async recordSessionExecution(identityId, language, jobId) {
+      const now = new Date();
+
+      await db
+        .insert(schema.replSessions)
+        .values({
+          id: createId("sess"),
+          smsIdentityId: identityId,
+          language,
+          status: "active",
+          state: {
+            defaultLanguage: language,
+            lastExecutionJobId: jobId,
+            lastActiveAt: now.toISOString(),
+          },
+          lastActiveAt: now,
+        })
+        .onConflictDoUpdate({
+          target: schema.replSessions.smsIdentityId,
+          targetWhere: eq(schema.replSessions.status, "active"),
+          set: {
+            language,
+            state: {
+              defaultLanguage: language,
+              lastExecutionJobId: jobId,
+              lastActiveAt: now.toISOString(),
+            },
+            lastActiveAt: now,
           },
         });
     },
@@ -458,6 +538,75 @@ export function createDrizzleDb(db: DatabaseClient): Db {
         .where(
           and(eq(schema.replSessions.smsIdentityId, identityId), eq(schema.replSessions.status, "active")),
         );
+    },
+
+    async countExecutionsForPhone(phoneE164, since) {
+      const rows = await db
+        .select({ value: count() })
+        .from(schema.executionJobs)
+        .innerJoin(schema.smsIdentities, eq(schema.executionJobs.smsIdentityId, schema.smsIdentities.id))
+        .where(and(eq(schema.smsIdentities.phoneE164, phoneE164), gte(schema.executionJobs.createdAt, since)))
+        .limit(1);
+
+      return Number(rows[0]?.value ?? 0);
+    },
+
+    async listRecentSmsMessages(limit) {
+      const messages = await db
+        .select()
+        .from(schema.smsMessages)
+        .orderBy(desc(schema.smsMessages.createdAt))
+        .limit(limit);
+
+      return messages.map(toSmsMessage);
+    },
+
+    async listRecentExecutionJobs(limit, status) {
+      const query = db
+        .select()
+        .from(schema.executionJobs)
+        .orderBy(desc(schema.executionJobs.createdAt))
+        .limit(limit);
+
+      if (!status) {
+        return (await query).map(toExecutionJob);
+      }
+
+      const jobs = await db
+        .select()
+        .from(schema.executionJobs)
+        .where(eq(schema.executionJobs.status, status))
+        .orderBy(desc(schema.executionJobs.createdAt))
+        .limit(limit);
+
+      return jobs.map(toExecutionJob);
+    },
+
+    async listSmsIdentityUsage(limit) {
+      const rows = await db
+        .select({
+          id: schema.smsIdentities.id,
+          phoneE164: schema.smsIdentities.phoneE164,
+          defaultLanguage: schema.smsIdentities.defaultLanguage,
+          executionCount: count(schema.executionJobs.id),
+          lastActiveAt: sql<Date | null>`max(${schema.replSessions.lastActiveAt})`,
+        })
+        .from(schema.smsIdentities)
+        .leftJoin(schema.executionJobs, eq(schema.executionJobs.smsIdentityId, schema.smsIdentities.id))
+        .leftJoin(schema.replSessions, eq(schema.replSessions.smsIdentityId, schema.smsIdentities.id))
+        .groupBy(
+          schema.smsIdentities.id,
+          schema.smsIdentities.phoneE164,
+          schema.smsIdentities.defaultLanguage,
+        )
+        .orderBy(desc(count(schema.executionJobs.id)))
+        .limit(limit);
+
+      return rows.map((row) => ({
+        ...row,
+        defaultLanguage: row.defaultLanguage as ReplLanguage,
+        executionCount: Number(row.executionCount),
+      }));
     },
   };
 }
