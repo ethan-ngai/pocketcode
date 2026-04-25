@@ -1,6 +1,6 @@
 /**
  * @file __root.tsx
- * @description Root TanStack route for the Shebang app shell.
+ * @description Root TanStack route for the Pocketcode app shell.
  * @module routes
  */
 import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";

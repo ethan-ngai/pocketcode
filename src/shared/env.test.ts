@@ -23,6 +23,7 @@ describe("getAppConfig", () => {
     const config = getAppConfig({
       ...baseEnv,
       ADMIN_EMAILS: "Admin@Example.test, ops@example.test",
+      SMS_ALLOWLIST: "+15555550123, +15555550124",
       EXECUTION_TIMEOUT_MS: "9000",
       EXECUTION_MAX_OUTPUT_CHARS: "1234",
       TWILIO_WEBHOOK_AUTH_ENABLED: "false",
@@ -31,6 +32,7 @@ describe("getAppConfig", () => {
     expect(config.adminEmails.has("admin@example.test")).toBe(true);
     expect(config.executionTimeoutMs).toBe(9_000);
     expect(config.executionMaxOutputChars).toBe(1_234);
+    expect(config.smsAllowlist.has("+15555550124")).toBe(true);
     expect(config.twilioWebhookAuthEnabled).toBe(false);
   });
 

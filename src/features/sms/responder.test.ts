@@ -35,8 +35,9 @@ describe("formatExecutionSmsMessages", () => {
         stderr: "timeout",
         exitCode: null,
         durationMs: 5_000,
+        timeoutMs: 8_000,
       }),
-    ).toEqual(["Timed out after 5s."]);
+    ).toEqual(["Timed out after 8s."]);
   });
 
   it("formats stderr-only failures as errors", () => {

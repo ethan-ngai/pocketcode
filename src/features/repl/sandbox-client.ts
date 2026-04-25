@@ -38,6 +38,7 @@ export async function executeInSandbox(
       stderr: rejection,
       exitCode: null,
       durationMs: Date.now() - started,
+      timeoutMs: request.timeoutMs,
       sandboxId: request.id,
       errorCode: "EXECUTION_REJECTED",
     };
@@ -50,6 +51,7 @@ export async function executeInSandbox(
       stderr: "Sandbox binding is not configured.",
       exitCode: null,
       durationMs: Date.now() - started,
+      timeoutMs: request.timeoutMs,
       sandboxId: request.id,
       errorCode: "SANDBOX_BINDING_MISSING",
     };
@@ -71,6 +73,7 @@ export async function executeInSandbox(
       stderr: clampOutput(result.stderr, request.maxOutputChars),
       exitCode: result.exitCode,
       durationMs: Date.now() - started,
+      timeoutMs: request.timeoutMs,
       sandboxId: request.id,
       errorCode: result.timedOut
         ? "EXECUTION_TIMEOUT"
@@ -85,6 +88,7 @@ export async function executeInSandbox(
       stderr: "Execution failed.",
       exitCode: null,
       durationMs: Date.now() - started,
+      timeoutMs: request.timeoutMs,
       sandboxId: request.id,
       errorCode: error instanceof Error ? "SANDBOX_EXECUTION_ERROR" : "SANDBOX_UNKNOWN_ERROR",
     };
@@ -146,7 +150,7 @@ function validateExecutionRequest(request: ExecutionRequest): string | null {
  * @returns True when the source should be rejected before sandbox dispatch.
  */
 function hasPythonRejectedPattern(code: string): boolean {
-  return /\bimport\s+(socket|subprocess|os)\b|from\s+(socket|subprocess|os)\s+import\b|open\(\s*["']\/|while\s+True\s*:/.test(
+  return /\bimport\s+(socket|subprocess|os|urllib|http\.client|ftplib|requests)\b|from\s+(socket|subprocess|os|urllib|http\.client|ftplib|requests)\s+import\b|open\(\s*["']\/|while\s+True\s*:/.test(
     code,
   );
 }
@@ -157,7 +161,9 @@ function hasPythonRejectedPattern(code: string): boolean {
  * @returns True when the source should be rejected before sandbox dispatch.
  */
 function hasJavaRejectedPattern(code: string): boolean {
-  return /Runtime\.getRuntime\(\)|ProcessBuilder|System\.getenv|Files\.walk\(\s*["']\//.test(code);
+  return /Runtime\.getRuntime\(\)|ProcessBuilder|System\.getenv|Files\.walk\(\s*["']\/|java\.net|HttpClient|URLConnection/.test(
+    code,
+  );
 }
 
 /**

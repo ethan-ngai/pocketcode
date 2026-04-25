@@ -3,7 +3,7 @@
  * @description Server-side SMS workflow entrypoints used by route wrappers.
  * @module sms
  */
-import type { Db } from "../db/client";
+import { createPostgresDb, type Db } from "../db/client";
 import type { ExecutionJob, SmsIdentity, SmsMessage } from "../db/db.types";
 import { runExecutionJob } from "../repl/jobs";
 import type { ExecutionResult, ReplLanguage, SmsCommand } from "../repl/repl.types";
@@ -91,6 +91,7 @@ export async function handleTwilioInbound(
       rawPayload: inbound.rawPayload,
     });
     const identity = await db.findOrCreateSmsIdentity(inbound.fromE164);
+    const access = checkSmsAllowlist(env, identity.phoneE164);
     const session = await db.getActiveSession(identity.id);
     const currentDefaultLanguage = session?.language ?? identity.defaultLanguage;
     const command = parseSmsCommand(inbound.body, currentDefaultLanguage);
@@ -101,6 +102,7 @@ export async function handleTwilioInbound(
       db,
       dependencies,
       env,
+      access,
       identity,
       message,
       waitUntil,
@@ -162,6 +164,7 @@ export async function handleTwilioStatus(
  * request context to keep Twilio retry behavior predictable.
  */
 async function dispatchInboundCommand(input: {
+  access: SmsAccessDecision;
   command: SmsCommand;
   currentDefaultLanguage: ReplLanguage;
   db: Db;
@@ -183,6 +186,15 @@ async function dispatchInboundCommand(input: {
       await input.db.upsertSessionLanguage(input.identity.id, input.command.language);
       return twimlResponse(`Default language set to ${formatLanguage(input.command.language)}.`);
     case "execute": {
+      if (!input.access.allowed) {
+        log("info", "SMS execution refused by allowlist", {
+          phoneHash: hashLogValue(input.identity.phoneE164),
+          reason: input.access.reason,
+        });
+
+        return twimlResponse(input.access.message);
+      }
+
       const limitDecision = await checkSmsExecutionRateLimit(input.db, input.identity.phoneE164);
 
       if (!limitDecision.allowed) {
@@ -256,7 +268,7 @@ async function sendExecutionResultSms(input: {
     };
   }
 
-  for (const body of formatExecutionSmsMessages(result)) {
+  for (const body of formatExecutionSmsMessages({ ...result, timeoutMs: input.job.timeoutMs })) {
     const sent = await send({
       to: input.identity.phoneE164,
       body,
@@ -360,18 +372,78 @@ function requireFormValue(parsedBody: URLSearchParams, key: string): string {
  * @param env - Worker bindings, optionally carrying a future DB implementation.
  * @param dependencies - Explicit dependency overrides from tests or adapters.
  * @returns Database boundary implementation.
- * @remarks The SMS owner depends on the DB interface but does not choose the
- * database driver; integration code can inject the concrete implementation here.
+ * @remarks Tests can inject an in-memory DB, while production routes build the
+ * Postgres client from Hyperdrive first and direct DATABASE_URL only as fallback.
  */
 function resolveDb(env: Env, dependencies: SmsDependencies): Db {
   const dbEnv = env as Env & { SMS_DB?: Db; DB?: Db };
-  const candidate = dependencies.db ?? dbEnv.SMS_DB ?? dbEnv.DB;
 
-  if (candidate) {
-    return candidate;
+  if (dependencies.db) {
+    return dependencies.db;
+  }
+
+  const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+
+  if (connectionString) {
+    return createPostgresDb({ connectionString });
+  }
+
+  const legacyCandidate = dbEnv.SMS_DB ?? dbEnv.DB;
+
+  if (legacyCandidate) {
+    return legacyCandidate;
   }
 
   throw new Error("SMS database client is not configured");
+}
+
+/**
+ * Result of evaluating invite-only SMS execution access.
+ * @remarks Cheap commands can still respond to users, but execution jobs must
+ * fail closed for production pilot traffic when a phone is not enabled.
+ */
+type SmsAccessDecision =
+  | { allowed: true }
+  | { allowed: false; reason: "missing_allowlist" | "not_allowlisted"; message: string };
+
+/**
+ * Checks whether a phone number may create execution jobs.
+ * @param env - Worker bindings carrying the temporary pilot allowlist.
+ * @param phoneE164 - Sender phone number after Twilio normalization.
+ * @returns Access decision for job creation.
+ * @remarks Non-production deployments keep an unset allowlist permissive so
+ * local webhook tests do not require pilot configuration; production denies
+ * execution unless the sender is explicitly listed.
+ */
+function checkSmsAllowlist(env: Env, phoneE164: string): SmsAccessDecision {
+  const rawAllowlist = env.SMS_ALLOWLIST?.trim();
+
+  if (!rawAllowlist) {
+    return env.ENVIRONMENT === "production"
+      ? {
+          allowed: false,
+          reason: "missing_allowlist",
+          message: "This SMS pilot is invite-only. Ask the project team for access.",
+        }
+      : { allowed: true };
+  }
+
+  const allowedPhones = new Set(
+    rawAllowlist
+      .split(",")
+      .map((phone) => phone.trim())
+      .filter(Boolean),
+  );
+
+  if (allowedPhones.has(phoneE164)) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    reason: "not_allowlisted",
+    message: "This phone number is not enabled for the SMS pilot.",
+  };
 }
 
 /**

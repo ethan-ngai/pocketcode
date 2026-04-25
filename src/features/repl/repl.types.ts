@@ -74,6 +74,8 @@ export interface ExecutionResult {
   exitCode: number | null;
   /** Measured runtime duration for auditing and abuse controls. */
   durationMs: number;
+  /** Timeout budget used when the job was executed, if known to the formatter. */
+  timeoutMs?: number;
   /** Sandbox instance id for provider-level debugging. */
   sandboxId?: string;
   /** Stable machine-readable failure reason for retry and admin UX. */

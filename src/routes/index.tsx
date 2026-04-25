@@ -1,6 +1,6 @@
 /**
  * @file index.tsx
- * @description Public home route for the Shebang app.
+ * @description Public home route for the Pocketcode app.
  * @module routes
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -23,7 +23,7 @@ export const Route = createFileRoute("/")({
 function IndexRoute(): React.ReactElement {
   return (
     <main>
-      <h1>Shebang</h1>
+      <h1>Pocketcode</h1>
       <p>SMS-based Python and Java execution for low-connectivity contexts.</p>
       <Link to="/app">Open app</Link>
     </main>

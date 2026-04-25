@@ -45,6 +45,8 @@ export interface Env {
   TWILIO_MESSAGING_SERVICE_SID?: string;
   /** Concrete Twilio sender number used when no messaging service is configured. */
   TWILIO_FROM_NUMBER?: string;
+  /** Comma-separated E.164 phone numbers allowed to execute SMS jobs. */
+  SMS_ALLOWLIST?: string;
   /** Enables Twilio request signature validation for ingress routes. */
   TWILIO_WEBHOOK_AUTH_ENABLED?: string;
   /** Deployment environment name used for local-only safety bypasses. */
@@ -85,6 +87,8 @@ export interface AppConfig {
   twilioMessagingServiceSid: string | null;
   /** Twilio sender number when configured. */
   twilioFromNumber: string | null;
+  /** Phone numbers allowed to execute code during the invite-only pilot. */
+  smsAllowlist: ReadonlySet<string>;
   /** Whether inbound webhook signature checks are enforced. */
   twilioWebhookAuthEnabled: boolean;
   /** Public application base URL. */
@@ -144,6 +148,7 @@ export function getAppConfig(env: Env): AppConfig {
     twilioAuthToken: requireBinding(env.TWILIO_AUTH_TOKEN, "TWILIO_AUTH_TOKEN"),
     twilioMessagingServiceSid,
     twilioFromNumber,
+    smsAllowlist: parsePhoneSet(env.SMS_ALLOWLIST),
     twilioWebhookAuthEnabled: parseBoolean(env.TWILIO_WEBHOOK_AUTH_ENABLED, true),
     appBaseUrl: requireBinding(env.APP_BASE_URL, "APP_BASE_URL"),
     executionTimeoutMs: parsePositiveInteger(
@@ -266,6 +271,22 @@ function parseEmailSet(value: string | undefined): ReadonlySet<string> {
     (value ?? "")
       .split(",")
       .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+/**
+ * Parses the temporary SMS pilot allowlist.
+ * @param value - Comma-separated E.164 phone list from Worker configuration.
+ * @returns Normalized phone-number set for execution access checks.
+ * @remarks SMS access remains config-owned for the MVP so operators can add or
+ * remove pilot users without changing database rows while quotas evolve.
+ */
+function parsePhoneSet(value: string | undefined): ReadonlySet<string> {
+  return new Set(
+    (value ?? "")
+      .split(",")
+      .map((phone) => phone.trim())
       .filter(Boolean),
   );
 }

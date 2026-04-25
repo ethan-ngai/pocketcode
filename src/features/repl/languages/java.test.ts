@@ -58,4 +58,21 @@ describe("runJavaCommand", () => {
       "javac Main.java && java Main:/workspace/jobs/job_test:8000",
     ]);
   });
+
+  it("normalizes timeout exceptions with the Java timeout budget", async () => {
+    const sandbox: SandboxRuntime = {
+      mkdir: async () => undefined,
+      writeFile: async () => undefined,
+      exec: async () => {
+        throw new Error("Command timed out");
+      },
+    };
+
+    await expect(runJavaCommand(sandbox, request, "/workspace/jobs/job_test")).resolves.toMatchObject({
+      stdout: "",
+      stderr: "Timed out after 8s.",
+      exitCode: null,
+      timedOut: true,
+    });
+  });
 });

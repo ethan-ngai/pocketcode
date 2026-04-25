@@ -26,7 +26,7 @@ function AppRoute(): React.ReactElement {
       <nav>
         <Link to="/">Home</Link> <Link to="/app/admin">Admin</Link>
       </nav>
-      <h1>Shebang App</h1>
+      <h1>Pocketcode App</h1>
       <Outlet />
     </main>
   );

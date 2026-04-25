@@ -4,11 +4,13 @@
  * @module admin
  */
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { env } from "cloudflare:workers";
 
 import { createPostgresDb, type Db } from "../db/client";
 import type { ExecutionJob, SmsIdentityUsage, SmsMessage } from "../db/db.types";
 import type { Env } from "../../shared/env";
+import { requireAdmin } from "../auth/require-admin";
 import type {
   AdminDashboardData,
   AdminExecutionView,
@@ -30,6 +32,8 @@ const DASHBOARD_PREVIEW_LIMIT = 10;
  */
 export const getAdminDashboardData = createServerFn({ method: "GET" }).handler(
   async (): Promise<AdminDashboardData> => {
+    await requireAdmin(getRequest(), env as Env);
+
     const db = createAdminDb();
 
     return {
@@ -54,8 +58,13 @@ export const getAdminDashboardData = createServerFn({ method: "GET" }).handler(
  * @returns Recent provider message rows prepared for display.
  */
 export const getAdminMessages = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AdminMessageView[]> =>
-    (await createAdminDb().listRecentSmsMessages(DEFAULT_ADMIN_LIMIT)).map(toAdminMessageView),
+  async (): Promise<AdminMessageView[]> => {
+    await requireAdmin(getRequest(), env as Env);
+
+    return (await createAdminDb().listRecentSmsMessages(DEFAULT_ADMIN_LIMIT)).map(
+      toAdminMessageView,
+    );
+  },
 );
 
 /**
@@ -63,10 +72,13 @@ export const getAdminMessages = createServerFn({ method: "GET" }).handler(
  * @returns Recent execution jobs prepared for display.
  */
 export const getAdminExecutions = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AdminExecutionView[]> =>
-    (await createAdminDb().listRecentExecutionJobs(DEFAULT_ADMIN_LIMIT)).map((job) =>
+  async (): Promise<AdminExecutionView[]> => {
+    await requireAdmin(getRequest(), env as Env);
+
+    return (await createAdminDb().listRecentExecutionJobs(DEFAULT_ADMIN_LIMIT)).map((job) =>
       toAdminExecutionView(job, null),
-    ),
+    );
+  },
 );
 
 /**
@@ -74,8 +86,13 @@ export const getAdminExecutions = createServerFn({ method: "GET" }).handler(
  * @returns Phone identities ranked by execution usage.
  */
 export const getAdminIdentityUsage = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AdminIdentityUsageView[]> =>
-    (await createAdminDb().listSmsIdentityUsage(DEFAULT_ADMIN_LIMIT)).map(toAdminIdentityUsageView),
+  async (): Promise<AdminIdentityUsageView[]> => {
+    await requireAdmin(getRequest(), env as Env);
+
+    return (await createAdminDb().listSmsIdentityUsage(DEFAULT_ADMIN_LIMIT)).map(
+      toAdminIdentityUsageView,
+    );
+  },
 );
 
 /**

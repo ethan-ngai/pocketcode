@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Shebang is a TanStack Start-based SMS-REPL supporting Java and Python execution aimed at convenient code execution for those without access to WiFi or data.
+Pocketcode is a TanStack Start-based SMS-REPL supporting Java and Python execution aimed at convenient code execution for those without access to WiFi or data.
 
 ## Tech Stack
 

@@ -28,7 +28,7 @@ export function createAuth(env: Env) {
  * @remarks Cloudflare bindings are request-scoped, so callers should treat this
  * type as request-local instead of caching it globally.
  */
-export type ShebangAuth = ReturnType<typeof createAuth>;
+export type PocketcodeAuth = ReturnType<typeof createAuth>;
 
 /**
  * Builds Better Auth options from normalized Worker configuration.
@@ -50,7 +50,7 @@ function createAuthOptions(env: Env) {
       : undefined;
 
   return {
-    appName: "Shebang",
+    appName: "Pocketcode",
     basePath: "/api/auth",
     baseURL: config.betterAuthUrl,
     secret: config.betterAuthSecret,

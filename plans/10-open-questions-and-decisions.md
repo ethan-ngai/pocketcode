@@ -42,4 +42,6 @@ Add dated decisions here:
 2026-04-25 — Decision: MVP uses one-shot execution, not persistent REPL state.
 2026-04-25 — Decision: Default language is Python.
 2026-04-25 — Decision: Feature-first repository convention uses `src/features/<feature>`, `*.functions.ts` for server functions, and `*.types.ts` for shared feature types.
+2026-04-25 — Decision: SMS execution launches invite-only through `SMS_ALLOWLIST`.
+2026-04-25 — Decision: Cloudflare Sandbox network disabling is not exposed in SDK 0.9, so outbound network access remains a documented launch risk and the pilot stays invite-only.
 ```

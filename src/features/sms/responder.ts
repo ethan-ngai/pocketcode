@@ -57,7 +57,7 @@ export function formatSmsOutput(output: string, prefix = ""): string[] {
  */
 export function formatExecutionSmsMessages(result: ExecutionResult): string[] {
   if (result.status === "timed_out") {
-    return ["Timed out after 5s."];
+    return [`Timed out after ${formatTimeout(result.timeoutMs)}.`];
   }
 
   if (result.stderr && !result.stdout) {
@@ -68,6 +68,15 @@ export function formatExecutionSmsMessages(result: ExecutionResult): string[] {
     result.stderr && result.stdout ? `${result.stdout.trimEnd()}\n${result.stderr}` : result.stdout;
 
   return formatSmsOutput(output, "Output:\n");
+}
+
+/**
+ * Formats the execution timeout budget for user-facing SMS copy.
+ * @param timeoutMs - Timeout budget captured on the job when available.
+ * @returns Rounded second count used in terse timeout messages.
+ */
+function formatTimeout(timeoutMs: number | undefined): string {
+  return `${Math.max(Math.round((timeoutMs ?? 5_000) / 1_000), 1)}s`;
 }
 
 /**

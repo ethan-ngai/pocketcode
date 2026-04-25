@@ -3,7 +3,7 @@
  * @description Integration coverage for Twilio webhook handling without Twilio or sandbox execution.
  * @module tests
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/features/repl/sandbox-client", () => ({
   executeInSandbox: async () => ({
@@ -14,6 +14,21 @@ vi.mock("../../src/features/repl/sandbox-client", () => ({
     durationMs: 7,
     sandboxId: "sandbox_test",
   }),
+}));
+
+const dbClientMock = vi.hoisted(() => ({
+  productionDb: undefined as InMemoryDb | undefined,
+  createPostgresDb: vi.fn(() => {
+    if (!dbClientMock.productionDb) {
+      throw new Error("production DB mock is not configured");
+    }
+
+    return dbClientMock.productionDb;
+  }),
+}));
+
+vi.mock("../../src/features/db/client", () => ({
+  createPostgresDb: dbClientMock.createPostgresDb,
 }));
 
 import type { Env } from "../../src/shared/env";
@@ -35,6 +50,11 @@ const env: Env = {
 };
 
 describe("handleTwilioInbound", () => {
+  beforeEach(() => {
+    dbClientMock.productionDb = undefined;
+    dbClientMock.createPostgresDb.mockClear();
+  });
+
   it("accepts a signed webhook and sends execution results through injected dependencies", async () => {
     const db = createInMemoryDb();
     const sentMessages: string[] = [];
@@ -84,6 +104,53 @@ describe("handleTwilioInbound", () => {
     expect(secondPending).toHaveLength(0);
     expect(db.jobs).toHaveLength(1);
     expect(sentMessages).toHaveLength(1);
+  });
+
+  it("builds the database client from Hyperdrive when dependencies are not injected", async () => {
+    const db = createInMemoryDb();
+    const pending: Promise<unknown>[] = [];
+    dbClientMock.productionDb = db;
+
+    const response = await handleTwilioInbound(
+      await signedInboundRequest("SM_PRODUCTION_DB", "help"),
+      {
+        ...env,
+        DATABASE_URL: "postgres://fallback",
+        HYPERDRIVE: { connectionString: "postgres://hyperdrive" },
+      },
+      collectWaitUntil(pending),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Commands:");
+    expect(dbClientMock.createPostgresDb).toHaveBeenCalledWith({
+      connectionString: "postgres://hyperdrive",
+    });
+    expect(db.messages).toHaveLength(1);
+    expect(pending).toHaveLength(0);
+  });
+
+  it("refuses execution for non-allowlisted pilot phone numbers without creating a job", async () => {
+    const db = createInMemoryDb();
+    const pending: Promise<unknown>[] = [];
+    const sentMessages: string[] = [];
+
+    const response = await handleTwilioInbound(
+      await signedInboundRequest("SM_NOT_ALLOWED", 'py print("hi")'),
+      {
+        ...env,
+        ENVIRONMENT: "production",
+        SMS_ALLOWLIST: "+15555550124",
+      },
+      collectWaitUntil(pending),
+      createSmsDependencies(db, sentMessages),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("not enabled");
+    expect(db.jobs).toHaveLength(0);
+    expect(sentMessages).toHaveLength(0);
+    expect(pending).toHaveLength(0);
   });
 });
 
